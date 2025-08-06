@@ -1,0 +1,404 @@
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: nova-network-operator
+  labels:
+    nova-platform.io/trusted-ca-bundle: enabled
+    nova-platform.io/cluster-monitoring: "true"
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+spec:
+  finalizers:
+    - kubernetes
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nova-nvidia-network-operator
+  namespace: nova-network-operator
+  labels:
+    app.kubernetes.io/name: nova-nvidia-network-operator
+    app.kubernetes.io/version: v25.1.0
+    app.kubernetes.io/managed-by: Nova
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nova-nvidia-network-operator
+rules:
+  - verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+    apiGroups: [""]
+    resources:
+      - configmaps
+      - events
+      - persistentvolumeclaims
+      - secrets
+      - endpoints
+      - namespaces
+      - pods
+      - pods/status
+      - serviceaccounts
+      - services
+      - services/finalizers
+      - pods/eviction
+  - verbs: ["get", "list", "patch", "update", "watch"]
+    apiGroups: [""]
+    resources:
+      - nodes
+  - verbs: ["list"]
+    apiGroups: [""]
+    resources:
+      - pods
+  - verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+    apiGroups:
+      - admissionregistration.k8s.io
+    resources:
+      - validatingwebhookconfigurations
+  - verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+    apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions
+  - verbs: ["create", "delete", "get", "list", "patch", "update", "watch", "update"]
+    apiGroups:
+      - apps
+    resources:
+      - controllerrevisions
+      - daemonsets
+      - deployments
+      - replicasets
+      - statefulsets
+      - deployments/finalizers
+  - verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+    apiGroups:
+      - batch
+    resources:
+      - cronjobs
+  - verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+    apiGroups:
+      - cert-manager.io
+    resources:
+      - certificates
+      - issuers
+  - verbs: ["get", "list", "watch"]
+    apiGroups:
+      - config.openshift.io
+    resources:
+      - clusterversions
+      - proxies
+  - verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+    apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+  - verbs: ["create", "get", "patch", "update"]
+    apiGroups:
+      - events.k8s.io
+    resources:
+      - events
+  - verbs: ["get", "list", "watch"]
+    apiGroups:
+      - image.openshift.io
+    resources:
+      - imagestreams
+  - verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+    apiGroups:
+      - k8s.cni.cncf.io
+    resources:
+      - network-attachment-definitions
+  - verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+    apiGroups:
+      - mellanox.com
+    resources:
+      - hostdevicenetworks
+      - hostdevicenetworks/status
+      - hostdevicenetworks/finalizers
+      - ipoibnetworks
+      - ipoibnetworks/status
+      - ipoibnetworks/finalizers
+      - macvlannetworks
+      - macvlannetworks/status
+      - macvlannetworks/finalizers
+      - nicclusterpolicies
+      - nicclusterpolicies/status
+      - nicclusterpolicies/finalizers
+  - verbs: ["create", "get", "list", "watch"]
+    apiGroups:
+      - monitoring.coreos.com
+    resources:
+      - servicemonitors
+  - verbs: ["create", "get", "list", "watch", "patch", "update"]
+    apiGroups:
+      - nv-ipam.nvidia.com
+    resources:
+      - ippools
+      - ippools/status
+      - cidrpools
+      - cidrpools/status
+  - verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+    apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterrolebindings
+      - clusterroles
+      - rolebindings
+      - roles
+  - verbs: ["use"]
+    apiGroups:
+      - security.openshift.io
+    resources:
+      - securitycontextconstraints
+    resourceNames:
+      - privileged
+  - verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+    apiGroups:
+      - whereabouts.cni.cncf.io
+    resources:
+      - ippools
+      - overlappingrangeipreservations
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nova-nvidia-network-operator
+  namespace: nova-network-operator
+  labels:
+    app.kubernetes.io/name: nova-nvidia-network-operator
+    app.kubernetes.io/version: v25.1.0
+    app.kubernetes.io/managed-by: Nova
+rules:
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - roles
+  - rolebindings
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - controllerrevisions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - endpoints
+  - pods
+  - pods/eviction
+  - secrets
+  - services
+  - services/finalizers
+  - serviceaccounts
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  - prometheusrules
+  verbs:
+  - get
+  - list
+  - create
+  - watch
+  - update
+  - delete
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nova-nvidia-network-operator
+  labels:
+    app.kubernetes.io/name: nova-nvidia-network-operator
+    app.kubernetes.io/version: v25.1.0
+    app.kubernetes.io/managed-by: Nova
+subjects:
+- kind: ServiceAccount
+  name: nova-nvidia-network-operator
+  namespace: nova-network-operator
+roleRef:
+  kind: ClusterRole
+  name: nova-nvidia-network-operator
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nova-nvidia-network-operator
+  namespace: nova-network-operator
+  labels:
+    app.kubernetes.io/name: nova-nvidia-network-operator
+    app.kubernetes.io/version: v25.1.0
+    app.kubernetes.io/managed-by: Nova
+subjects:
+- kind: ServiceAccount
+  name: nova-nvidia-network-operator
+  namespace: nova-network-operator
+roleRef:
+  kind: Role
+  name: nova-nvidia-network-operator
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nova-nvidia-network-operator
+  namespace: nova-network-operator
+  labels:
+    app.kubernetes.io/name: nova-nvidia-network-operator
+    app.kubernetes.io/component: network-operator
+    app.kubernetes.io/version: v25.1.0
+    app.kubernetes.io/managed-by: Nova
+    control-plane: network-operator-controller
+    nvidia.com/ofed-driver-upgrade-drain.skip: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nova-nvidia-network-operator
+      app.kubernetes.io/component: network-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nova-nvidia-network-operator
+        app.kubernetes.io/component: network-operator
+        control-plane: network-operator-controller
+        nvidia.com/ofed-driver-upgrade-drain.skip: "true"
+      annotations:
+        kubectl.kubernetes.io/default-container: network-operator
+    spec:
+      serviceAccountName: nova-nvidia-network-operator
+      priorityClassName: system-cluster-critical
+      imagePullSecrets: []
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/master
+                    operator: In
+                    values:
+                      - ""
+            - weight: 1
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: In
+                    values:
+                      - ""
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Equal
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/control-plane
+          operator: Equal
+          effect: NoSchedule
+      securityContext:
+        runAsUser: 65532
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: network-operator
+          image: ${imageRepository}/nvidia/cloud-native/network-operator:v25.1.0
+          imagePullPolicy: IfNotPresent
+          command: ["/manager"]
+          args: ["--leader-elect"]
+          env:
+            - name: STATE_MANIFEST_BASE_DIR
+              value: "/manifests"
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: OPERATOR_NAME
+              value: "network-operator"
+            - name: ENABLE_WEBHOOKS
+              value: "false"
+            - name: USE_DTK
+              value: "true"
+            - name: CNI_BIN_DIR
+              value: "/opt/cni/bin"
+            - name: OFED_INIT_CONTAINER_IMAGE
+              value: "${imageRepository}/mellanox/network-operator-init-container:v0.0.3"
+          securityContext:
+            allowPrivilegeEscalation: false
+          ports:
+          - name: metrics
+            containerPort: 8080
+          resources:
+            requests:
+              cpu: 5m
+              memory: 64Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 15
+            timeoutSeconds: 1
+            periodSeconds: 20
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
+
