@@ -1,0 +1,381 @@
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: nova-gpu-operator
+  labels:
+    nova-platform.io/trusted-ca-bundle: enabled
+    nova-platform.io/cluster-monitoring: "true"
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+spec:
+  finalizers:
+    - kubernetes
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nova-nvidia-gpu-operator
+  namespace: nova-gpu-operator
+  labels:
+    app.kubernetes.io/name: nova-nvidia-gpu-operator
+    app.kubernetes.io/version: v25.3.0
+    app.kubernetes.io/managed-by: Nova
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nova-nvidia-gpu-operator
+  labels:
+    app.kubernetes.io/name: nova-nvidia-gpu-operator
+    app.kubernetes.io/version: v25.3.0
+    app.kubernetes.io/managed-by: Nova
+rules:
+- apiGroups:
+  - config.openshift.io
+  resources:
+  - clusterversions
+  - proxies
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - image.openshift.io
+  resources:
+  - imagestreams
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - security.openshift.io
+  resources:
+  - securitycontextconstraints
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+  - use
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterroles
+  - clusterrolebindings
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/eviction
+  verbs:
+  - create
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - nvidia.com
+  resources:
+  - clusterpolicies
+  - clusterpolicies/finalizers
+  - clusterpolicies/status
+  - nvidiadrivers
+  - nvidiadrivers/finalizers
+  - nvidiadrivers/status
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+  - deletecollection
+- apiGroups:
+  - scheduling.k8s.io
+  resources:
+  - priorityclasses
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+- apiGroups:
+  - node.k8s.io
+  resources:
+  - runtimeclasses
+  verbs:
+  - get
+  - list
+  - create
+  - update
+  - watch
+  - delete
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nova-nvidia-gpu-operator
+  namespace: nova-gpu-operator
+  labels:
+    app.kubernetes.io/name: nova-nvidia-gpu-operator
+    app.kubernetes.io/version: v25.3.0
+    app.kubernetes.io/managed-by: Nova
+rules:
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - roles
+  - rolebindings
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - apps
+  resources:
+  - controllerrevisions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - endpoints
+  - pods
+  - pods/eviction
+  - secrets
+  - services
+  - services/finalizers
+  - serviceaccounts
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - monitoring.coreos.com
+  resources:
+  - servicemonitors
+  - prometheusrules
+  verbs:
+  - get
+  - list
+  - create
+  - watch
+  - update
+  - delete
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nova-nvidia-gpu-operator
+  labels:
+    app.kubernetes.io/name: nova-nvidia-gpu-operator
+    app.kubernetes.io/version: v25.3.0
+    app.kubernetes.io/managed-by: Nova
+subjects:
+- kind: ServiceAccount
+  name: nova-nvidia-gpu-operator
+  namespace: nova-gpu-operator
+roleRef:
+  kind: ClusterRole
+  name: nova-nvidia-gpu-operator
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nova-nvidia-gpu-operator
+  namespace: nova-gpu-operator
+  labels:
+    app.kubernetes.io/name: nova-nvidia-gpu-operator
+    app.kubernetes.io/version: v25.3.0
+    app.kubernetes.io/managed-by: Nova
+subjects:
+- kind: ServiceAccount
+  name: nova-nvidia-gpu-operator
+  namespace: nova-gpu-operator
+roleRef:
+  kind: Role
+  name: nova-nvidia-gpu-operator
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nova-nvidia-gpu-operator
+  namespace: nova-gpu-operator
+  labels:
+    app.kubernetes.io/name: nova-nvidia-gpu-operator
+    app.kubernetes.io/component: gpu-operator
+    app.kubernetes.io/version: v25.3.0
+    app.kubernetes.io/managed-by: Nova
+    nvidia.com/gpu-driver-upgrade-drain.skip: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nova-nvidia-gpu-operator
+      app.kubernetes.io/component: gpu-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nova-nvidia-gpu-operator
+        app.kubernetes.io/component: gpu-operator
+        app: gpu-operator
+        nvidia.com/gpu-driver-upgrade-drain.skip: "true"
+    spec:
+      serviceAccountName: nova-nvidia-gpu-operator
+      priorityClassName: system-cluster-critical
+      containers:
+      - name: gpu-operator
+        image: nvcr.io/nvidia/gpu-operator:v25.3.0
+        imagePullPolicy: IfNotPresent
+        command: ["gpu-operator"]
+        args:
+        - --leader-elect
+        - --zap-time-encoding=epoch
+        - --zap-log-level=info
+        env:
+        - name: WATCH_NAMESPACE
+          value: ""
+        - name: OPERATOR_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: "DRIVER_MANAGER_IMAGE"
+          value: "nvcr.io/nvidia/cloud-native/k8s-driver-manager:v0.8.0"
+        volumeMounts:
+          - name: host-os-release
+            mountPath: "/host-etc/os-release"
+            readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 200m
+            memory: 100Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+        ports:
+          - name: metrics
+            containerPort: 8080
+      volumes:
+        - name: host-os-release
+          hostPath:
+            path: "/etc/os-release"
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+

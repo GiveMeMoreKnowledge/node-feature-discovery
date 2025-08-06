@@ -1,0 +1,741 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: default-mig-parted-config
+  namespace: nova-gpu-operator
+  labels:
+    app.kubernetes.io/name: nova-nvidia-gpu-operator
+    app.kubernetes.io/component: gpu-operator
+    app.kubernetes.io/managed-by: Nova
+data:
+  config.yaml: |
+    version: v1
+    mig-configs:
+      all-disabled:
+        - devices: all
+          mig-enabled: false
+
+      all-enabled:
+        - devices: all
+          mig-enabled: true
+          mig-devices: {}
+
+      # A100-40GB, A800-40GB
+      all-1g.5gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.5gb": 7
+
+      all-1g.5gb.me:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.5gb+me": 1
+
+      all-2g.10gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.10gb": 3
+
+      all-3g.20gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "3g.20gb": 2
+
+      all-4g.20gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "4g.20gb": 1
+
+      all-7g.40gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "7g.40gb": 1
+
+      # H100-80GB, H800-80GB, A100-80GB, A800-80GB, A100-40GB, A800-40GB
+      all-1g.10gb:
+        # H100-80GB, H800-80GB, A100-80GB, A800-80GB
+        - device-filter: ["0x233010DE", "0x233110DE", "0x232210DE", "0x20B210DE", "0x20B510DE", "0x20F310DE", "0x20F510DE", "0x232410DE"]
+          devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.10gb": 7
+
+        # A100-40GB, A800-40GB
+        - device-filter: ["0x20B010DE", "0x20B110DE", "0x20F110DE", "0x20F610DE"]
+          devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.10gb": 4
+
+      # H100-80GB, H800-80GB, A100-80GB, A800-80GB
+      all-1g.10gb.me:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.10gb+me": 1
+
+      # H100-80GB, H800-80GB, A100-80GB, A800-80GB
+      all-1g.20gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.20gb": 4
+
+      # B200
+      all-1g.23gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.23gb": 7
+
+      # B200
+      all-1g.23gb.me:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.23gb+me": 1
+
+      # GB200 HGX
+      all-1g.24gb.me:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.24gb+me": 1
+
+      all-2g.20gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.20gb": 3
+
+      all-3g.40gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "3g.40gb": 2
+
+      all-4g.40gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "4g.40gb": 1
+
+      all-7g.80gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "7g.80gb": 1
+
+      # A30-24GB
+      all-1g.6gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.6gb": 4
+
+      all-1g.6gb.me:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.6gb+me": 1
+
+      all-2g.12gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.12gb": 2
+
+      all-2g.12gb.me:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.12gb+me": 1
+
+      all-4g.24gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "4g.24gb": 1
+
+      # H100 NVL, H800 NVL, GH200
+      all-1g.12gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.12gb": 7
+
+      all-1g.12gb.me:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.12gb+me": 1
+
+      all-1g.24gb:
+        # GB200 HGX
+        - device-filter: ["0x294110DE"]
+          devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.24gb": 7
+
+        # H100 NVL 94GB
+        - device-filter: ["0x232110DE"]
+          devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.24gb": 4
+
+      all-1g.45gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.45gb": 4
+
+      all-1g.47gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.47gb": 4
+
+      all-2g.24gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.24gb": 3
+
+      all-2g.45gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.45gb": 3
+
+      all-2g.47gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.47gb": 3
+
+      # H100 NVL, H800 NVL
+      all-3g.47gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "3g.47gb": 2
+
+      all-4g.47gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "4g.47gb": 1
+
+      all-7g.94gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "7g.94gb": 1
+
+      # H100-96GB, PG506-96GB, GH200
+      all-3g.48gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "3g.48gb": 2
+
+      all-3g.90gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "3g.90gb": 2
+
+      all-3g.95gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "3g.95gb": 2
+
+      all-4g.48gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "4g.48gb": 1
+
+      all-4g.90gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "4g.90gb": 1
+
+      all-4g.95gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "4g.95gb": 1
+
+      all-7g.96gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "7g.96gb": 1
+
+      all-7g.180gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "7g.180gb": 1
+
+      all-7g.189gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "7g.189gb": 1
+
+      # GB200 HGX, B200, GH200 144G HBM3e, H200-141GB, H200 NVL, H100-96GB, GH200, H100 NVL, H800 NVL, H100-80GB, H800-80GB, A800-40GB, A800-80GB, A100-40GB, A100-80GB, A30-24GB, PG506-96GB
+      all-balanced:
+        # GB200 HGX
+        - device-filter: ["0x294110DE"]
+          devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.24gb": 2
+            "2g.47gb": 1
+            "3g.95gb": 1
+
+        # B200
+        - device-filter: ["0x290110DE"]
+          devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.23gb": 2
+            "2g.45gb": 1
+            "3g.90gb": 1
+
+        # GH200 144G HBM3e
+        - device-filter: ["0x234810DE"]
+          devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.18gb": 2
+            "2g.36gb": 1
+            "3g.72gb": 1
+
+        # H200 141GB, H200 NVL
+        - device-filter: ["0x233510DE", "0x233B10DE"]
+          devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.18gb": 2
+            "2g.35gb": 1
+            "3g.71gb": 1
+
+        # H100 NVL, H800 NVL
+        - device-filter: ["0x232110DE", "0x233A10DE"]
+          devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.12gb": 2
+            "2g.24gb": 1
+            "3g.47gb": 1
+
+        # H100-80GB, H800-80GB, A100-80GB, A800-80GB
+        - device-filter: ["0x233010DE", "0x233110DE", "0x232210DE", "0x20B210DE", "0x20B510DE", "0x20F310DE", "0x20F510DE", "0x232410DE"]
+          devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.10gb": 2
+            "2g.20gb": 1
+            "3g.40gb": 1
+
+        # A100-40GB, A800-40GB
+        - device-filter: ["0x20B010DE", "0x20B110DE", "0x20F110DE", "0x20F610DE"]
+          devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.5gb": 2
+            "2g.10gb": 1
+            "3g.20gb": 1
+
+        # A30-24GB
+        - device-filter: "0x20B710DE"
+          devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.6gb": 2
+            "2g.12gb": 1
+
+        # H100-96GB, PG506-96GB, GH200, H20
+        - device-filter: ["0x234210DE", "0x233D10DE", "0x20B610DE", "0x232910DE"]
+          devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.12gb": 2
+            "2g.24gb": 1
+            "3g.48gb": 1
+
+      # H200-141GB, GH200 144G HBM3e
+      all-1g.18gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.18gb": 7
+
+      all-1g.18gb.me:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.18gb+me": 1
+
+      # H200-141GB
+      all-1g.35gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.35gb": 4
+
+      all-2g.35gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.35gb": 3
+
+      all-3g.71gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "3g.71gb": 2
+
+      all-4g.71gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "4g.71gb": 1
+
+      all-7g.141gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "7g.141gb": 1
+
+      # GH200 144G HBM3e
+      all-1g.36gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "1g.36gb": 4
+
+      all-2g.36gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "2g.36gb": 3
+
+      all-3g.72gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "3g.72gb": 2
+
+      all-4g.72gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "4g.72gb": 1
+
+      all-7g.144gb:
+        - devices: all
+          mig-enabled: true
+          mig-devices:
+            "7g.144gb": 1
+---
+apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: nvidia-cluster-policy
+  labels:
+    app.kubernetes.io/name: nova-nvidia-gpu-operator
+    app.kubernetes.io/component: gpu-operator
+    app.kubernetes.io/managed-by: Nova
+spec:
+  hostPaths:
+    rootFS: "/"
+    driverInstallDir: "/run/nvidia/driver"
+  operator:
+    runtimeClass: nvidia
+    initContainer:
+      repository: nvcr.io/nvidia
+      image: cuda
+      version: 12.8.1-base-ubi9
+      imagePullPolicy: IfNotPresent
+    use_ocp_driver_toolkit: false
+  daemonsets:
+    labels:
+      app.kubernetes.io/managed-by: nova-gpu-operator
+    tolerations: 
+    - operator: Exists
+    priorityClassName: system-node-critical
+    updateStrategy: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: "1"
+  validator:
+    repository: nvcr.io/nvidia/cloud-native
+    image: gpu-operator-validator
+    version: v25.3.0
+    imagePullPolicy: IfNotPresent
+    plugin:
+      env:
+      - name: WITH_WORKLOAD
+        value: "false"
+  mig:
+    enabled: false
+  psa:
+    enabled: false
+  cdi:
+    enabled: false
+    default: false
+  driver:
+    enabled: true
+    useNvidiaDriverCRD: false
+    kernelModuleType: auto
+    usePrecompiled: false
+    repository: dsalman
+    image: nvidia-driver
+    version: "570.124.06"
+    imagePullPolicy: IfNotPresent
+    startupProbe: 
+      initialDelaySeconds: 60
+      periodSeconds: 10
+      timeoutSeconds: 60
+      failureThreshold: 120
+    rdma:
+      enabled: false
+      useHostMofed: false
+    manager:
+      repository: nvcr.io/nvidia/cloud-native
+      image:  k8s-driver-manager
+      version: v0.8.0
+      imagePullPolicy: IfNotPresent
+      env: 
+      - name: ENABLE_GPU_POD_EVICTION
+        value: "true"
+      - name: ENABLE_AUTO_DRAIN
+        value: "false"
+      - name: DRAIN_USE_FORCE
+        value: "false"
+      - name: DRAIN_POD_SELECTOR_LABEL
+        value: ""
+      - name: DRAIN_TIMEOUT_SECONDS
+        value: "0s"
+      - name: DRAIN_DELETE_EMPTYDIR_DATA
+        value: "false"
+    repoConfig: 
+      configMapName: ""
+    certConfig: 
+      name: ""
+    licensingConfig: 
+      configMapName: ""
+      nlsEnabled: true
+    virtualTopology:
+      config: ""
+    kernelModuleConfig:
+      name: ""
+    upgradePolicy:
+      autoUpgrade: true
+      maxParallelUpgrades: 1
+      maxUnavailable: "25%"
+      waitForCompletion:
+        timeoutSeconds: 0
+      podDeletion:
+        force: false
+        timeoutSeconds: 300
+        deleteEmptyDir: false
+      drain:
+        enable: false
+        force: false
+        timeoutSeconds:  300
+        deleteEmptyDir: false
+  vgpuManager:
+    enabled: false
+    image: vgpu-manager
+    imagePullPolicy: IfNotPresent
+    driverManager:
+      repository: nvcr.io/nvidia/cloud-native
+      image: k8s-driver-manager
+      version: v0.8.0
+      imagePullPolicy: IfNotPresent
+      env: 
+      - name: ENABLE_GPU_POD_EVICTION
+        value: "false"
+      - name: ENABLE_AUTO_DRAIN
+        value: "false"
+  kataManager:
+    enabled: false
+    config:
+      artifactsDir: "/opt/nvidia-gpu-operator/artifacts/runtimeclasses"
+      runtimeClasses:
+      - name: kata-nvidia-gpu
+        nodeSelector: {}
+        artifacts:
+          url: nvcr.io/nvidia/cloud-native/kata-gpu-artifacts:ubuntu22.04-535.54.03
+          pullSecret: ""
+      - name: kata-nvidia-gpu-snp
+        nodeSelector:
+          "nvidia.com/cc.capable": "true"
+        artifacts:
+          url: nvcr.io/nvidia/cloud-native/kata-gpu-artifacts:ubuntu22.04-535.86.10-snp
+          pullSecret: ""
+    repository: nvcr.io/nvidia/cloud-native
+    image: k8s-kata-manager
+    version: v0.2.3
+    imagePullPolicy: IfNotPresent
+  vfioManager:
+    enabled: true
+    repository: nvcr.io/nvidia
+    image: cuda
+    version: "12.8.1-base-ubi9"
+    imagePullPolicy: IfNotPresent
+    driverManager:
+      repository: nvcr.io/nvidia/cloud-native
+      image: k8s-driver-manager
+      version: v0.8.0
+      imagePullPolicy: IfNotPresent
+      env:
+      - name: ENABLE_GPU_POD_EVICTION
+        value: "false"
+      - name: ENABLE_AUTO_DRAIN
+        value: "false"
+  vgpuDeviceManager:
+    enabled: false
+    repository: nvcr.io/nvidia/cloud-native
+    image: vgpu-device-manager
+    version: v0.3.0
+    imagePullPolicy: IfNotPresent
+    config:
+      name: ""
+      default: "default"
+  ccManager:
+    enabled: false
+    defaultMode: "off"
+    repository: nvcr.io/nvidia/cloud-native
+    image: k8s-cc-manager
+    version: v0.1.1
+    imagePullPolicy: IfNotPresent
+    env:
+    - name: CC_CAPABLE_DEVICE_IDS
+      value: "0x2339,0x2331,0x2330,0x2324,0x2322,0x233d"
+  toolkit:
+    enabled: true
+    repository: nvcr.io/nvidia/k8s
+    image: container-toolkit
+    version: "v1.17.5-ubuntu20.04"
+    imagePullPolicy: IfNotPresent
+    installDir: "/usr/local/nvidia"
+    env:
+    - name: CONTAINERD_CONFIG
+      value: /etc/containerd/config.toml
+    - name: CONTAINERD_SOCKET
+      value: /run/containerd/containerd.sock
+    - name: CONTAINERD_RUNTIME_CLASS
+      value: nvidia
+    - name: CONTAINERD_SET_AS_DEFAULT
+      value: "true"
+  devicePlugin:
+    enabled: true
+    repository: nvcr.io/nvidia
+    image: k8s-device-plugin
+    version: v0.17.1
+    imagePullPolicy: IfNotPresent
+    env:
+    - name: PASS_DEVICE_SPECS
+      value: "true"
+    - name: FAIL_ON_INIT_ERROR
+      value: "true"
+    - name: DEVICE_LIST_STRATEGY
+      value: envvar
+    - name: DEVICE_ID_STRATEGY
+      value: uuid
+    - name: NVIDIA_VISIBLE_DEVICES
+      value: all
+    - name: NVIDIA_DRIVER_CAPABILITIES
+      value: all
+  dcgm:
+    enabled: false
+    repository: nvcr.io/nvidia/cloud-native
+    image: dcgm
+    version: "4.1.1-2-ubuntu22.04"
+    imagePullPolicy: IfNotPresent
+  dcgmExporter:
+    enabled: true
+    repository: nvcr.io/nvidia/k8s
+    image: dcgm-exporter
+    version: "4.1.1-4.0.4-ubuntu22.04"
+    imagePullPolicy: IfNotPresent
+    env:
+    - name: DCGM_EXPORTER_LISTEN
+      value: ":9400"
+    - name: DCGM_EXPORTER_KUBERNETES
+      value: "true"
+    - name: DCGM_EXPORTER_COLLECTORS
+      value: "/etc/dcgm-exporter/dcp-metrics-included.csv"
+    serviceMonitor:
+      enabled: true
+      interval: 15s
+      honorLabels: false
+  gfd:
+    enabled: true
+    repository: nvcr.io/nvidia
+    image: k8s-device-plugin
+    version: v0.17.1
+    imagePullPolicy: IfNotPresent
+    env:
+    - name: GFD_SLEEP_INTERVAL
+      value: 60s
+    - name: GFD_FAIL_ON_INIT_ERROR
+      value: "true"
+  migManager:
+    enabled: true
+    repository: nvcr.io/nvidia/cloud-native
+    image: k8s-mig-manager
+    version: "v0.12.1-ubuntu20.04"
+    imagePullPolicy: IfNotPresent
+    env:
+    - name: WITH_REBOOT
+      value: "true"
+    config:
+      name: default-mig-parted-config
+      default: "all-disabled"
+    gpuClientsConfig:
+      name: ""
+  nodeStatusExporter:
+    enabled: true
+    repository: nvcr.io/nvidia/cloud-native
+    image: gpu-operator-validator
+    version: v25.3.0
+    imagePullPolicy: IfNotPresent
+  gds:
+    enabled: false
+    repository: nvcr.io/nvidia/cloud-native
+    image: gpu-operator-validator
+    version: v25.3.0
+    imagePullPolicy: IfNotPresent
+  gdrcopy:
+    enabled: false
+    repository: nvcr.io/nvidia/cloud-native
+    image: gdrdrv
+    version: v2.4.4
+    imagePullPolicy: IfNotPresent
+  sandboxWorkloads:
+    enabled: false
+    defaultWorkload: "container"
+  sandboxDevicePlugin:
+    enabled: true
+    repository: nvcr.io/nvidia
+    image: kubevirt-gpu-device-plugin
+    version: v1.3.1
+    imagePullPolicy: IfNotPresent
+
