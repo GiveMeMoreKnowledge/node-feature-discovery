@@ -492,7 +492,7 @@ spec:
       - name: WITH_WORKLOAD
         value: "false"
   mig:
-    enabled: false
+    strategy: single
   psa:
     enabled: false
   cdi:
