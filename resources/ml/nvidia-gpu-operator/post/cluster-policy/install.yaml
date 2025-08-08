@@ -13,6 +13,13 @@ data: {}
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  name: time-slicing-config
+  namespace: nova-gpu-operator
+data: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
   name: default-mig-parted-config
   namespace: nova-gpu-operator
   labels:
@@ -487,8 +494,8 @@ spec:
   daemonsets:
     labels:
       app.kubernetes.io/managed-by: nova-gpu-operator
-    tolerations: 
-    - operator: Exists
+    tolerations:
+      - operator: Exists
     priorityClassName: system-node-critical
     updateStrategy: RollingUpdate
     rollingUpdate:
@@ -500,8 +507,8 @@ spec:
     imagePullPolicy: IfNotPresent
     plugin:
       env:
-      - name: WITH_WORKLOAD
-        value: "false"
+        - name: WITH_WORKLOAD
+          value: "false"
   mig:
     strategy: single
   psa:
@@ -518,7 +525,7 @@ spec:
     image: nvidia-driver
     version: "570.124.06"
     imagePullPolicy: IfNotPresent
-    startupProbe: 
+    startupProbe:
       initialDelaySeconds: 60
       periodSeconds: 10
       timeoutSeconds: 60
@@ -528,27 +535,27 @@ spec:
       useHostMofed: false
     manager:
       repository: nvcr.io/nvidia/cloud-native
-      image:  k8s-driver-manager
+      image: k8s-driver-manager
       version: v0.8.0
       imagePullPolicy: IfNotPresent
-      env: 
-      - name: ENABLE_GPU_POD_EVICTION
-        value: "true"
-      - name: ENABLE_AUTO_DRAIN
-        value: "false"
-      - name: DRAIN_USE_FORCE
-        value: "false"
-      - name: DRAIN_POD_SELECTOR_LABEL
-        value: ""
-      - name: DRAIN_TIMEOUT_SECONDS
-        value: "0s"
-      - name: DRAIN_DELETE_EMPTYDIR_DATA
-        value: "false"
-    repoConfig: 
+      env:
+        - name: ENABLE_GPU_POD_EVICTION
+          value: "true"
+        - name: ENABLE_AUTO_DRAIN
+          value: "false"
+        - name: DRAIN_USE_FORCE
+          value: "false"
+        - name: DRAIN_POD_SELECTOR_LABEL
+          value: ""
+        - name: DRAIN_TIMEOUT_SECONDS
+          value: "0s"
+        - name: DRAIN_DELETE_EMPTYDIR_DATA
+          value: "false"
+    repoConfig:
       configMapName: ""
-    certConfig: 
+    certConfig:
       name: ""
-    licensingConfig: 
+    licensingConfig:
       configMapName: ""
       nlsEnabled: true
     virtualTopology:
@@ -568,7 +575,7 @@ spec:
       drain:
         enable: false
         force: false
-        timeoutSeconds:  300
+        timeoutSeconds: 300
         deleteEmptyDir: false
   vgpuManager:
     enabled: false
@@ -579,27 +586,27 @@ spec:
       image: k8s-driver-manager
       version: v0.8.0
       imagePullPolicy: IfNotPresent
-      env: 
-      - name: ENABLE_GPU_POD_EVICTION
-        value: "false"
-      - name: ENABLE_AUTO_DRAIN
-        value: "false"
+      env:
+        - name: ENABLE_GPU_POD_EVICTION
+          value: "false"
+        - name: ENABLE_AUTO_DRAIN
+          value: "false"
   kataManager:
     enabled: false
     config:
       artifactsDir: "/opt/nvidia-gpu-operator/artifacts/runtimeclasses"
       runtimeClasses:
-      - name: kata-nvidia-gpu
-        nodeSelector: {}
-        artifacts:
-          url: nvcr.io/nvidia/cloud-native/kata-gpu-artifacts:ubuntu22.04-535.54.03
-          pullSecret: ""
-      - name: kata-nvidia-gpu-snp
-        nodeSelector:
-          "nvidia.com/cc.capable": "true"
-        artifacts:
-          url: nvcr.io/nvidia/cloud-native/kata-gpu-artifacts:ubuntu22.04-535.86.10-snp
-          pullSecret: ""
+        - name: kata-nvidia-gpu
+          nodeSelector: {}
+          artifacts:
+            url: nvcr.io/nvidia/cloud-native/kata-gpu-artifacts:ubuntu22.04-535.54.03
+            pullSecret: ""
+        - name: kata-nvidia-gpu-snp
+          nodeSelector:
+            "nvidia.com/cc.capable": "true"
+          artifacts:
+            url: nvcr.io/nvidia/cloud-native/kata-gpu-artifacts:ubuntu22.04-535.86.10-snp
+            pullSecret: ""
     repository: nvcr.io/nvidia/cloud-native
     image: k8s-kata-manager
     version: v0.2.3
@@ -616,10 +623,10 @@ spec:
       version: v0.8.0
       imagePullPolicy: IfNotPresent
       env:
-      - name: ENABLE_GPU_POD_EVICTION
-        value: "false"
-      - name: ENABLE_AUTO_DRAIN
-        value: "false"
+        - name: ENABLE_GPU_POD_EVICTION
+          value: "false"
+        - name: ENABLE_AUTO_DRAIN
+          value: "false"
   vgpuDeviceManager:
     enabled: false
     repository: nvcr.io/nvidia/cloud-native
@@ -637,8 +644,8 @@ spec:
     version: v0.1.1
     imagePullPolicy: IfNotPresent
     env:
-    - name: CC_CAPABLE_DEVICE_IDS
-      value: "0x2339,0x2331,0x2330,0x2324,0x2322,0x233d"
+      - name: CC_CAPABLE_DEVICE_IDS
+        value: "0x2339,0x2331,0x2330,0x2324,0x2322,0x233d"
   toolkit:
     enabled: true
     repository: nvcr.io/nvidia/k8s
@@ -647,14 +654,14 @@ spec:
     imagePullPolicy: IfNotPresent
     installDir: "/usr/local/nvidia"
     env:
-    - name: CONTAINERD_CONFIG
-      value: /etc/containerd/config.toml
-    - name: CONTAINERD_SOCKET
-      value: /run/containerd/containerd.sock
-    - name: CONTAINERD_RUNTIME_CLASS
-      value: nvidia
-    - name: CONTAINERD_SET_AS_DEFAULT
-      value: "true"
+      - name: CONTAINERD_CONFIG
+        value: /etc/containerd/config.toml
+      - name: CONTAINERD_SOCKET
+        value: /run/containerd/containerd.sock
+      - name: CONTAINERD_RUNTIME_CLASS
+        value: nvidia
+      - name: CONTAINERD_SET_AS_DEFAULT
+        value: "true"
   devicePlugin:
     enabled: true
     repository: nvcr.io/nvidia
@@ -662,18 +669,18 @@ spec:
     version: v0.17.1
     imagePullPolicy: IfNotPresent
     env:
-    - name: PASS_DEVICE_SPECS
-      value: "true"
-    - name: FAIL_ON_INIT_ERROR
-      value: "true"
-    - name: DEVICE_LIST_STRATEGY
-      value: envvar
-    - name: DEVICE_ID_STRATEGY
-      value: uuid
-    - name: NVIDIA_VISIBLE_DEVICES
-      value: all
-    - name: NVIDIA_DRIVER_CAPABILITIES
-      value: all
+      - name: PASS_DEVICE_SPECS
+        value: "true"
+      - name: FAIL_ON_INIT_ERROR
+        value: "true"
+      - name: DEVICE_LIST_STRATEGY
+        value: envvar
+      - name: DEVICE_ID_STRATEGY
+        value: uuid
+      - name: NVIDIA_VISIBLE_DEVICES
+        value: all
+      - name: NVIDIA_DRIVER_CAPABILITIES
+        value: all
   dcgm:
     enabled: false
     repository: nvcr.io/nvidia/cloud-native
@@ -687,12 +694,12 @@ spec:
     version: "4.1.1-4.0.4-ubuntu22.04"
     imagePullPolicy: IfNotPresent
     env:
-    - name: DCGM_EXPORTER_LISTEN
-      value: ":9400"
-    - name: DCGM_EXPORTER_KUBERNETES
-      value: "true"
-    - name: DCGM_EXPORTER_COLLECTORS
-      value: "/etc/dcgm-exporter/dcp-metrics-included.csv"
+      - name: DCGM_EXPORTER_LISTEN
+        value: ":9400"
+      - name: DCGM_EXPORTER_KUBERNETES
+        value: "true"
+      - name: DCGM_EXPORTER_COLLECTORS
+        value: "/etc/dcgm-exporter/dcp-metrics-included.csv"
     serviceMonitor:
       enabled: true
       interval: 15s
@@ -704,10 +711,10 @@ spec:
     version: v0.17.1
     imagePullPolicy: IfNotPresent
     env:
-    - name: GFD_SLEEP_INTERVAL
-      value: 60s
-    - name: GFD_FAIL_ON_INIT_ERROR
-      value: "true"
+      - name: GFD_SLEEP_INTERVAL
+        value: 60s
+      - name: GFD_FAIL_ON_INIT_ERROR
+        value: "true"
   migManager:
     enabled: true
     repository: nvcr.io/nvidia/cloud-native
@@ -715,8 +722,8 @@ spec:
     version: "v0.12.1-ubuntu20.04"
     imagePullPolicy: IfNotPresent
     env:
-    - name: WITH_REBOOT
-      value: "true"
+      - name: WITH_REBOOT
+        value: "true"
     config:
       name: default-mig-parted-config
       default: "all-disabled"
@@ -749,4 +756,3 @@ spec:
     image: kubevirt-gpu-device-plugin
     version: v1.3.1
     imagePullPolicy: IfNotPresent
-
