@@ -1,0 +1,1182 @@
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: nova-airflow
+  labels:
+    nova-platform.io/trusted-ca-bundle: enabled
+    nova-platform.io/cluster-monitoring: "true"
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+spec:
+  finalizers:
+    - kubernetes
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nova-airflow-pod-launcher-role
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - "pods"
+    verbs:
+      - "create"
+      - "list"
+      - "get"
+      - "patch"
+      - "watch"
+      - "delete"
+  - apiGroups:
+      - ""
+    resources:
+      - "pods/log"
+    verbs:
+      - "get"
+  - apiGroups:
+      - ""
+    resources:
+      - "pods/exec"
+    verbs:
+      - "create"
+      - "get"
+  - apiGroups:
+      - ""
+    resources:
+      - "events"
+    verbs:
+      - "list"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nova-airflow-pod-log-reader-role
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - "pods"
+    verbs:
+      - "list"
+      - "get"
+      - "watch"
+  - apiGroups:
+      - ""
+    resources:
+      - "pods/log"
+    verbs:
+      - "get"
+      - "list"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nova-airflow:secrets-webhook-mutation-helper
+  namespace: nova-airflow
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - delete
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nova-airflow-pod-launcher-rolebinding
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nova-airflow-pod-launcher-role
+subjects:
+  - kind: ServiceAccount
+    name: nova-airflow-scheduler
+    namespace: nova-airflow
+  - kind: ServiceAccount
+    name: nova-airflow-worker
+    namespace: nova-airflow
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nova-airflow-pod-log-reader-rolebinding
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nova-airflow-pod-log-reader-role
+subjects:
+  - kind: ServiceAccount
+    name: nova-airflow-webserver
+    namespace: nova-airflow
+  - kind: ServiceAccount
+    name: nova-airflow-triggerer
+    namespace: nova-airflow
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nova-airflow:secrets-webhook-mutation-helper
+  namespace: nova-airflow
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nova-airflow:secrets-webhook-mutation-helper
+subjects:
+- kind: ServiceAccount
+  name: nova-airflow-migrate-database-job
+  namespace: nova-airflow
+- kind: ServiceAccount
+  name: nova-airflow-create-api-user
+  namespace: nova-airflow
+- kind: ServiceAccount
+  name: nova-airflow-webserver
+  namespace: nova-airflow
+- kind: ServiceAccount
+  name: nova-airflow-scheduler
+  namespace: nova-airflow
+- kind: ServiceAccount
+  name: nova-airflow-triggerer
+  namespace: nova-airflow
+- kind: ServiceAccount
+  name: nova-airflow-dag-processor
+  namespace: nova-airflow
+- kind: ServiceAccount
+  name: nova-airflow-worker
+  namespace: nova-airflow
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nova-airflow-auth
+  namespace: nova-airflow
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+- kind: ServiceAccount
+  name: nova-airflow-migrate-database-job
+  namespace: nova-airflow
+- kind: ServiceAccount
+  name: nova-airflow-create-api-user
+  namespace: nova-airflow
+- kind: ServiceAccount
+  name: nova-airflow-webserver
+  namespace: nova-airflow
+- kind: ServiceAccount
+  name: nova-airflow-scheduler
+  namespace: nova-airflow
+- kind: ServiceAccount
+  name: nova-airflow-triggerer
+  namespace: nova-airflow
+- kind: ServiceAccount
+  name: nova-airflow-dag-processor
+  namespace: nova-airflow
+- kind: ServiceAccount
+  name: nova-airflow-worker
+  namespace: nova-airflow
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nova-airflow-logs
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+spec:
+  accessModes: 
+    - "ReadWriteMany"
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: ${airFlowStorageClass}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nova-airflow-git-credentials
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+type: Opaque
+stringData:
+  GITSYNC_USERNAME: "vault:nova-secrets/data/credentials/ml/git#admin_username"
+  GITSYNC_PASSWORD: "vault:nova-secrets/data/credentials/ml/git#admin_password"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nova-airflow-git-reference
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+type: Opaque
+stringData:
+  GIT_SYNC_REPO: "http://nova-ml-git.nova-ml-git.svc.${k8sDefaultDnsZone}:3000/container-platform/airflow.git"
+  GITSYNC_REPO: "http://nova-ml-git.nova-ml-git.svc.${k8sDefaultDnsZone}:3000/container-platform/airflow.git"
+  GIT_SYNC_REV:
+  GITSYNC_REF:
+  GIT_SYNC_BRANCH:
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nova-airflow-credentials
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+type: Opaque
+stringData:
+  AIRFLOW__CORE__FERNET_KEY: "vault:nova-secrets/data/credentials/ml/airflow#fernet_key"
+  AIRFLOW__WEBSERVER__SECRET_KEY: "vault:nova-secrets/data/credentials/ml/airflow#webserver_secret_key"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nova-airflow-psql-credentials
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+type: Opaque
+stringData:
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql://$${vault:nova-secrets/data/credentials/ml/postgresql#ml_username}:$${vault:nova-secrets/data/credentials/ml/postgresql#ml_password}@nova-ml-postgresql.nova-postgresql.svc:5432/airflow"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nova-airflow-config
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+data:
+  airflow.cfg: |-
+    [api]
+    auth_backend = airflow.api.auth.backend.basic_auth
+
+    [celery]
+    flower_url_prefix = 
+    worker_concurrency = 16
+
+    [celery_kubernetes_executor]
+    kubernetes_queue = kubernetes
+
+    [core]
+    auth_manager = airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    colored_console_log = False
+    dags_folder = /opt/airflow/dags/repo/dags
+    executor = KubernetesExecutor
+    load_examples = False
+    remote_logging = False
+
+    [elasticsearch]
+    json_format = True
+    log_id_template = {dag_id}_{task_id}_{execution_date}_{try_number}
+
+    [elasticsearch_configs]
+    max_retries = 3
+    retry_timeout = True
+    timeout = 30
+
+    [kubernetes]
+    airflow_configmap = nova-airflow-config
+    airflow_local_settings_configmap = nova-airflow-config
+    multi_namespace_mode = False
+    namespace = nova-airflow
+    pod_template_file = /opt/airflow/pod_templates/pod_template_file.yaml
+    worker_container_repository = ${imageRepository}/apache/airflow
+    worker_container_tag = 2.10.5
+
+    [kubernetes_executor]
+    multi_namespace_mode = False
+    namespace = nova-airflow
+    pod_template_file = /opt/airflow/pod_templates/pod_template_file.yaml
+    worker_container_repository = ${imageRepository}/apache/airflow
+    worker_container_tag = 2.10.5
+    ssl_ca_cert = /etc/ssl/certs/ca-certificates.crt
+
+    [logging]
+    colored_console_log = False
+    remote_logging = False
+
+    [metrics]
+    statsd_host = nova-airflow-statsd
+    statsd_on = True
+    statsd_port = 9125
+    statsd_prefix = airflow
+
+    [scheduler]
+    run_duration = 41460
+    standalone_dag_processor = True
+    statsd_host = nova-airflow-statsd
+    statsd_on = True
+    statsd_port = 9125
+    statsd_prefix = airflow
+
+    [webserver]
+    enable_proxy_fix = True
+    rbac = True
+    config_file = /opt/airflow/webserver/webserver_config.py
+
+  airflow_local_settings.py: |-
+
+  pod_template_file.yaml: |-
+    ---
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: placeholder-name
+      labels:
+        app.kubernetes.io/name: nova-airflow
+        app.kubernetes.io/instance: nova-airflow-worker
+        app.kubernetes.io/managed-by: Nova
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+        kubectl.kubernetes.io/default-container: base
+        vault.security.banzaicloud.io/vault-path: nova-kubernetes
+        vault.security.banzaicloud.io/vault-role: nova-system-airflow
+        vault.security.banzaicloud.io/vault-trust-manager-tls-bundle: "trusted-ca-bundle"
+        vault.security.banzaicloud.io/run-as-non-root: "true"
+    spec:
+      initContainers:
+        - name: secrets-webhook-mutation-helper
+          image: "${imageRepository}/nova/secrets-webhook-mutation-helper:v1.0.0"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: true
+          env:
+          - name: CA_CERT_PATH
+            value: /etc/ssl/certs/ca-certificates.crt
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+        - name: git-sync-init
+          image: ${imageRepository}/git-sync/git-sync:v4.3.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 65533
+          envFrom:
+            - secretRef:
+                name: nova-airflow-git-credentials
+            - secretRef:
+                name: nova-airflow-git-reference
+          env:
+            - name: GIT_SYNC_DEPTH
+              value: "1"
+            - name: GITSYNC_DEPTH
+              value: "1"
+            - name: GIT_SYNC_ROOT
+              value: "/git"
+            - name: GITSYNC_ROOT
+              value: "/git"
+            - name: GIT_SYNC_DEST
+              value: "repo"
+            - name: GITSYNC_LINK
+              value: "repo"
+            - name: GIT_SYNC_ADD_USER
+              value: "true"
+            - name: GITSYNC_ADD_USER
+              value: "true"
+            - name: GITSYNC_PERIOD
+              value: "5s"
+            - name: GIT_SYNC_MAX_SYNC_FAILURES
+              value: "0"
+            - name: GITSYNC_MAX_FAILURES
+              value: "0"
+            - name: GIT_SYNC_ONE_TIME
+              value: "true"
+            - name: GITSYNC_ONE_TIME
+              value: "true"
+          resources: 
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: dags
+              mountPath: /git
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+      containers:
+        - envFrom:
+            - secretRef:
+                name: nova-airflow-credentials
+            - secretRef:
+                name: nova-airflow-psql-credentials
+          env:
+            - name: AIRFLOW__CORE__EXECUTOR
+              value: LocalExecutor
+            - name: AIRFLOW_HOME
+              value: /opt/airflow
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          name: base
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - mountPath: "/opt/airflow/logs"
+              name: logs
+            - name: config
+              mountPath: "/opt/airflow/airflow.cfg"
+              subPath: airflow.cfg
+              readOnly: true
+            - name: config
+              mountPath: "/opt/airflow/config/airflow_local_settings.py"
+              subPath: airflow_local_settings.py
+              readOnly: true
+            - name: config
+              mountPath: /opt/airflow/pod_templates/pod_template_file.yaml
+              subPath: pod_template_file.yaml
+              readOnly: true
+            - name: dags
+              mountPath: /opt/airflow/dags
+              readOnly: False
+      restartPolicy: Never
+      securityContext:
+        runAsUser: 50000
+        fsGroup: 0
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      tolerations: []
+      terminationGracePeriodSeconds: 600
+      serviceAccountName: "nova-airflow-worker"
+      volumes:
+        - name: logs
+          persistentVolumeClaim:
+            claimName: nova-airflow-logs
+        - configMap:
+            name: nova-airflow-config
+          name: config
+        - name: dags
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: trusted-ca-bundle
+          configMap:
+            name: trusted-ca-bundle
+            items:
+            - key: ca-certificates.pem
+              path: ca-certificates.crt
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nova-airflow-statsd
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-statsd
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+  annotations:
+    kustomize.toolkit.fluxcd.io/substitute: disabled
+data:
+  mappings.yml: |-
+    ---
+    # 
+    mappings:
+      # Map dot separated stats to labels
+      - match: airflow.dagrun.dependency-check.*.*
+        name: "airflow_dagrun_dependency_check"
+        labels:
+          dag_id: "$1"
+    
+      - match: airflow.operator_successes_(.*)
+        match_type: regex
+        name: "airflow_operator_successes"
+        labels:
+          operator: "$1"
+    
+      - match: airflow.operator_failures_(.*)
+        match_type: regex
+        name: "airflow_operator_failures"
+        labels:
+          operator: "$1"
+    
+      - match: airflow.scheduler_heartbeat
+        match_type: regex
+        name: "airflow_scheduler_heartbeat"
+        labels:
+          type: counter
+    
+      - match: airflow.dag_processor_heartbeat
+        match_type: regex
+        name: "airflow_dag_processor_heartbeat"
+        labels:
+          type: counter
+    
+      - match: airflow.dag.*.*.duration
+        name: "airflow_task_duration"
+        labels:
+          dag_id: "$1"
+          task_id: "$2"
+    
+      - match: airflow.dagrun.duration.success.*
+        name: "airflow_dagrun_duration"
+        labels:
+          dag_id: "$1"
+    
+      - match: airflow.dagrun.duration.failed.*
+        name: "airflow_dagrun_failed"
+        labels:
+          dag_id: "$1"
+    
+      - match: airflow.dagrun.schedule_delay.*
+        name: "airflow_dagrun_schedule_delay"
+        labels:
+          dag_id: "$1"
+    
+      - match: airflow.dag_processing.last_runtime.*
+        name: "airflow_dag_processing_last_runtime"
+        labels:
+          dag_file: "$1"
+    
+      - match: airflow.dag_processing.last_run.seconds_ago.*
+        name: "airflow_dag_processing_last_run_seconds_ago"
+        labels:
+          dag_file: "$1"
+    
+      - match: airflow.pool.open_slots.*
+        name: "airflow_pool_open_slots"
+        labels:
+          pool: "$1"
+    
+      - match: airflow.pool.used_slots.*
+        name: "airflow_pool_used_slots"
+        labels:
+          pool: "$1"
+    
+      - match: airflow.pool.starving_tasks.*
+        name: "airflow_pool_starving_tasks"
+        labels:
+          pool: "$1"
+    
+      - match: airflow.executor.open_slots.*
+        name: "airflow_executor_open_slots"
+        labels:
+          executor: "$1"
+    
+      - match: airflow.executor.queued_tasks.*
+        name: "airflow_executor_queued_tasks"
+        labels:
+          executor: "$1"
+    
+      - match: airflow.executor.running_tasks.*
+        name: "airflow_executor_running_tasks"
+        labels:
+          executor: "$1"
+    
+      - match: airflow.ti.running.*.*.*
+        name: "airflow_ti_running"
+        labels:
+          queue: "$1"
+          dag_id: "$2"
+          task_id: "$3"
+
+      # Airflow StatsD metrics mappings (https://airflow.apache.org/docs/apache-airflow/stable/logging-monitoring/metrics.html)
+      # === Counters ===
+      - match: "(.+)\\.(.+)_start$"
+        match_metric_type: counter
+        name: "af_agg_job_start"
+        match_type: regex
+        labels:
+          airflow_id: "$1"
+          job_name: "$2"
+      
+      - match: "(.+)\\.(.+)_end$"
+        match_metric_type: counter
+        name: "af_agg_job_end"
+        match_type: regex
+        labels:
+          airflow_id: "$1"
+          job_name: "$2"
+      
+      - match: "(.+)\\.operator_failures_(.+)$"
+        match_metric_type: counter
+        name: "af_agg_operator_failures"
+        match_type: regex
+        labels:
+          airflow_id: "$1"
+          operator_name: "$2"
+      
+      - match: "(.+)\\.operator_successes_(.+)$"
+        match_metric_type: counter
+        name: "af_agg_operator_successes"
+        match_type: regex
+        labels:
+          airflow_id: "$1"
+          operator_name: "$2"
+      
+      - match: "*.ti_failures"
+        match_metric_type: counter
+        name: "af_agg_ti_failures"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.ti_successes"
+        match_metric_type: counter
+        name: "af_agg_ti_successes"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.zombies_killed"
+        match_metric_type: counter
+        name: "af_agg_zombies_killed"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.scheduler_heartbeat"
+        match_metric_type: counter
+        name: "af_agg_scheduler_heartbeat"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.dag_processing.processes"
+        match_metric_type: counter
+        name: "af_agg_dag_processing_processes"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.scheduler.tasks.killed_externally"
+        match_metric_type: counter
+        name: "af_agg_scheduler_tasks_killed_externally"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.scheduler.tasks.running"
+        match_metric_type: counter
+        name: "af_agg_scheduler_tasks_running"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.scheduler.tasks.starving"
+        match_metric_type: counter
+        name: "af_agg_scheduler_tasks_starving"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.scheduler.orphaned_tasks.cleared"
+        match_metric_type: counter
+        name: "af_agg_scheduler_orphaned_tasks_cleared"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.scheduler.orphaned_tasks.adopted"
+        match_metric_type: counter
+        name: "af_agg_scheduler_orphaned_tasks_adopted"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.scheduler.critical_section_busy"
+        match_metric_type: counter
+        name: "af_agg_scheduler_critical_section_busy"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.sla_email_notification_failure"
+        match_metric_type: counter
+        name: "af_agg_sla_email_notification_failure"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.ti.start.*.*"
+        match_metric_type: counter
+        name: "af_agg_ti_start"
+        labels:
+          airflow_id: "$1"
+          dag_id: "$2"
+          task_id: "$3"
+      
+      - match: "*.ti.finish.*.*.*"
+        match_metric_type: counter
+        name: "af_agg_ti_finish"
+        labels:
+          airflow_id: "$1"
+          dag_id: "$2"
+          task_id: "$3"
+          state: "$4"
+      
+      - match: "*.dag.callback_exceptions"
+        match_metric_type: counter
+        name: "af_agg_dag_callback_exceptions"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.celery.task_timeout_error"
+        match_metric_type: counter
+        name: "af_agg_celery_task_timeout_error"
+        labels:
+          airflow_id: "$1"
+
+      # === Gauges ===
+      - match: "*.dagbag_size"
+        match_metric_type: gauge
+        name: "af_agg_dagbag_size"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.dag_processing.import_errors"
+        match_metric_type: gauge
+        name: "af_agg_dag_processing_import_errors"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.dag_processing.total_parse_time"
+        match_metric_type: gauge
+        name: "af_agg_dag_processing_total_parse_time"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.dag_processing.last_runtime.*"
+        match_metric_type: gauge
+        name: "af_agg_dag_processing_last_runtime"
+        labels:
+          airflow_id: "$1"
+          dag_file: "$2"
+      
+      - match: "*.dag_processing.last_run.seconds_ago.*"
+        match_metric_type: gauge
+        name: "af_agg_dag_processing_last_run_seconds"
+        labels:
+          airflow_id: "$1"
+          dag_file: "$2"
+      
+      - match: "*.dag_processing.processor_timeouts"
+        match_metric_type: gauge
+        name: "af_agg_dag_processing_processor_timeouts"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.executor.open_slots"
+        match_metric_type: gauge
+        name: "af_agg_executor_open_slots"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.executor.queued_tasks"
+        match_metric_type: gauge
+        name: "af_agg_executor_queued_tasks"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.executor.running_tasks"
+        match_metric_type: gauge
+        name: "af_agg_executor_running_tasks"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.pool.open_slots.*"
+        match_metric_type: gauge
+        name: "af_agg_pool_open_slots"
+        labels:
+          airflow_id: "$1"
+          pool_name: "$2"
+      
+      - match: "*.pool.queued_slots.*"
+        match_metric_type: gauge
+        name: "af_agg_pool_queued_slots"
+        labels:
+          airflow_id: "$1"
+          pool_name: "$2"
+      
+      - match: "*.pool.running_slots.*"
+        match_metric_type: gauge
+        name: "af_agg_pool_running_slots"
+        labels:
+          airflow_id: "$1"
+          pool_name: "$2"
+      
+      - match: "*.pool.starving_tasks.*"
+        match_metric_type: gauge
+        name: "af_agg_pool_starving_tasks"
+        labels:
+          airflow_id: "$1"
+          pool_name: "$2"
+      
+      - match: "*.smart_sensor_operator.poked_tasks"
+        match_metric_type: gauge
+        name: "af_agg_smart_sensor_operator_poked_tasks"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.smart_sensor_operator.poked_success"
+        match_metric_type: gauge
+        name: "af_agg_smart_sensor_operator_poked_success"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.smart_sensor_operator.poked_exception"
+        match_metric_type: gauge
+        name: "af_agg_smart_sensor_operator_poked_exception"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.smart_sensor_operator.exception_failures"
+        match_metric_type: gauge
+        name: "af_agg_smart_sensor_operator_exception_failures"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.smart_sensor_operator.infra_failures"
+        match_metric_type: gauge
+        name: "af_agg_smart_sensor_operator_infra_failures"
+        labels:
+          airflow_id: "$1"
+
+      # === Timers ===
+      - match: "*.dagrun.dependency-check.*"
+        match_metric_type: observer
+        name: "af_agg_dagrun_dependency_check"
+        labels:
+          airflow_id: "$1"
+          dag_id: "$2"
+      
+      - match: "*.dag.*.*.duration"
+        match_metric_type: observer
+        name: "af_agg_dag_task_duration"
+        labels:
+          airflow_id: "$1"
+          dag_id: "$2"
+          task_id: "$3"
+      
+      - match: "*.dag_processing.last_duration.*"
+        match_metric_type: observer
+        name: "af_agg_dag_processing_duration"
+        labels:
+          airflow_id: "$1"
+          dag_file: "$2"
+      
+      - match: "*.dagrun.duration.success.*"
+        match_metric_type: observer
+        name: "af_agg_dagrun_duration_success"
+        labels:
+          airflow_id: "$1"
+          dag_id: "$2"
+      
+      - match: "*.dagrun.duration.failed.*"
+        match_metric_type: observer
+        name: "af_agg_dagrun_duration_failed"
+        labels:
+          airflow_id: "$1"
+          dag_id: "$2"
+      
+      - match: "*.dagrun.schedule_delay.*"
+        match_metric_type: observer
+        name: "af_agg_dagrun_schedule_delay"
+        labels:
+          airflow_id: "$1"
+          dag_id: "$2"
+      
+      - match: "*.scheduler.critical_section_duration"
+        match_metric_type: observer
+        name: "af_agg_scheduler_critical_section_duration"
+        labels:
+          airflow_id: "$1"
+      
+      - match: "*.dagrun.*.first_task_scheduling_delay"
+        match_metric_type: observer
+        name: "af_agg_dagrun_first_task_scheduling_delay"
+        labels:
+          airflow_id: "$1"
+          dag_id: "$2"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nova-airflow-migrate-database-job
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-migrate-database-job
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+automountServiceAccountToken: true
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nova-airflow-migrate-database-job
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-migrate-database-job
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nova-airflow
+        app.kubernetes.io/instance: nova-airflow-migrate-database-job
+      annotations:
+        kubectl.kubernetes.io/default-container: run-airflow-migrations
+        vault.security.banzaicloud.io/vault-path: nova-kubernetes
+        vault.security.banzaicloud.io/vault-role: nova-system-airflow
+        vault.security.banzaicloud.io/vault-trust-manager-tls-bundle: "trusted-ca-bundle"
+        vault.security.banzaicloud.io/run-as-non-root: "true"
+    spec:
+      securityContext: 
+        runAsUser: 50000
+        fsGroup: 0
+        runAsGroup: 0
+      restartPolicy: OnFailure
+      priorityClassName: system-cluster-critical
+      tolerations: []
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      serviceAccountName: nova-airflow-migrate-database-job
+      initContainers:
+        - name: secrets-webhook-mutation-helper
+          image: ${imageRepository}/nova/secrets-webhook-mutation-helper:v1.0.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: true
+          env:
+          - name: CA_CERT_PATH
+            value: /etc/ssl/certs/ca-certificates.crt
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+      containers:
+        - name: run-airflow-migrations
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext: 
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          args:
+            - bash
+            - -c
+            - |-
+              exec \
+              airflow db migrate
+          envFrom:
+            - secretRef:
+                name: nova-airflow-credentials
+            - secretRef:
+                name: nova-airflow-psql-credentials
+          env:          
+            - name: PYTHONUNBUFFERED
+              value: "1"          
+            - name: AIRFLOW_HOME
+              value: /opt/airflow
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: config
+              mountPath: "/opt/airflow/airflow.cfg"
+              subPath: airflow.cfg
+              readOnly: true
+            - name: config
+              mountPath: "/opt/airflow/config/airflow_local_settings.py"
+              subPath: airflow_local_settings.py
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: nova-airflow-config
+        - name: trusted-ca-bundle
+          configMap:
+            name: trusted-ca-bundle
+            items:
+            - key: ca-certificates.pem
+              path: ca-certificates.crt
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nova-airflow-create-api-user
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-create-api-user
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+automountServiceAccountToken: true
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: nova-airflow-create-api-user
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-create-api-user
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nova-airflow
+        app.kubernetes.io/instance: nova-airflow-create-api-user
+      annotations:
+        kubectl.kubernetes.io/default-container: create-api-user
+        vault.security.banzaicloud.io/vault-path: nova-kubernetes
+        vault.security.banzaicloud.io/vault-role: nova-system-airflow
+        vault.security.banzaicloud.io/vault-trust-manager-tls-bundle: "trusted-ca-bundle"
+        vault.security.banzaicloud.io/run-as-non-root: "true"
+    spec:
+      securityContext: 
+        runAsUser: 50000
+        fsGroup: 0
+        runAsGroup: 0
+      restartPolicy: OnFailure
+      priorityClassName: system-cluster-critical
+      tolerations: []
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      serviceAccountName: nova-airflow-create-api-user
+      initContainers:
+        - name: secrets-webhook-mutation-helper
+          image: ${imageRepository}/nova/secrets-webhook-mutation-helper:v1.0.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: true
+          env:
+          - name: CA_CERT_PATH
+            value: /etc/ssl/certs/ca-certificates.crt
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+      containers:
+        - name: create-api-user
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext: 
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          args:
+            - bash
+            - -c
+            - |-
+              exec \
+              airflow users create \
+                -r 'Admin' \
+                -f 'Api' \
+                -l 'User' \
+                -e "$$AIRFLOW_API_USER_USERNAME@orionsoft.ru" \
+                -u "$$AIRFLOW_API_USER_USERNAME" \
+                -p "$$AIRFLOW_API_USER_PASSWORD"
+          envFrom:
+            - secretRef:
+                name: nova-airflow-credentials
+            - secretRef:
+                name: nova-airflow-psql-credentials
+          env:          
+            - name: PYTHONUNBUFFERED
+              value: "1"          
+            - name: AIRFLOW_HOME
+              value: /opt/airflow
+            - name: AIRFLOW_API_USER_USERNAME
+              value: vault:nova-secrets/data/credentials/ml/airflow#api_username
+            - name: AIRFLOW_API_USER_PASSWORD
+              value: vault:nova-secrets/data/credentials/ml/airflow#api_password
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: config
+              mountPath: "/opt/airflow/airflow.cfg"
+              subPath: airflow.cfg
+              readOnly: true
+            - name: config
+              mountPath: "/opt/airflow/config/airflow_local_settings.py"
+              subPath: airflow_local_settings.py
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: nova-airflow-config
+        - name: trusted-ca-bundle
+          configMap:
+            name: trusted-ca-bundle
+            items:
+            - key: ca-certificates.pem
+              path: ca-certificates.crt
+

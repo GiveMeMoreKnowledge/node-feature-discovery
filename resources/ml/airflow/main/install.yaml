@@ -1,0 +1,1379 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nova-airflow-dag-processor
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-dag-processor
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nova-airflow-scheduler
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-scheduler
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nova-airflow-worker
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-worker
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nova-airflow-statsd
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-statsd
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nova-airflow-triggerer
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-triggerer
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+automountServiceAccountToken: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nova-airflow-webserver
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-webserver
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nova-airflow-dag-processor
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-dag-processor
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+  annotations:
+    secret.reloader.stakater.com/reload: "nova-airflow-credentials,nova-airflow-psql-credentials,nova-airflow-git-credentials,nova-airflow-git-reference"
+    configmap.reloader.stakater.com/reload: "nova-airflow-config,trusted-ca-bundle"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nova-airflow
+      app.kubernetes.io/instance: nova-airflow-dag-processor
+  strategy:
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 50%
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nova-airflow
+        app.kubernetes.io/instance: nova-airflow-dag-processor
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+        kubectl.kubernetes.io/default-container: dag-processor
+        vault.security.banzaicloud.io/vault-path: nova-kubernetes
+        vault.security.banzaicloud.io/vault-role: nova-system-airflow
+        vault.security.banzaicloud.io/vault-trust-manager-tls-bundle: "trusted-ca-bundle"
+        vault.security.banzaicloud.io/run-as-non-root: "true"
+    spec:
+      serviceAccountName: nova-airflow-dag-processor
+      priorityClassName: system-cluster-critical
+      tolerations: []
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      terminationGracePeriodSeconds: 60
+      restartPolicy: Always
+      securityContext: 
+        runAsUser: 50000
+        fsGroup: 0
+        runAsGroup: 0
+      initContainers:
+        - name: secrets-webhook-mutation-helper
+          image: ${imageRepository}/nova/secrets-webhook-mutation-helper:v1.0.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: true
+          env:
+          - name: CA_CERT_PATH
+            value: /etc/ssl/certs/ca-certificates.crt
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+        - name: wait-for-airflow-migrations
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /opt/airflow/airflow.cfg
+              name: config
+              readOnly: true
+              subPath: airflow.cfg
+            - mountPath: /opt/airflow/config/airflow_local_settings.py
+              name: config
+              readOnly: true
+              subPath: airflow_local_settings.py
+          args:
+            - airflow
+            - db
+            - check-migrations
+            - --migration-wait-timeout=60
+          envFrom:
+            - secretRef:
+                name: nova-airflow-credentials
+            - secretRef:
+                name: nova-airflow-psql-credentials
+          env:
+            - name: AIRFLOW_HOME
+              value: /opt/airflow
+        - name: git-sync-init
+          image: ${imageRepository}/git-sync/git-sync:v4.3.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 65533
+          envFrom:
+            - secretRef:
+                name: nova-airflow-git-credentials
+            - secretRef:
+                name: nova-airflow-git-reference
+          env:
+            - name: GIT_SYNC_DEPTH
+              value: "1"
+            - name: GITSYNC_DEPTH
+              value: "1"
+            - name: GIT_SYNC_ROOT
+              value: "/git"
+            - name: GITSYNC_ROOT
+              value: "/git"
+            - name: GIT_SYNC_DEST
+              value: "repo"
+            - name: GITSYNC_LINK
+              value: "repo"
+            - name: GIT_SYNC_ADD_USER
+              value: "true"
+            - name: GITSYNC_ADD_USER
+              value: "true"
+            - name: GITSYNC_PERIOD
+              value: "5s"
+            - name: GIT_SYNC_MAX_SYNC_FAILURES
+              value: "0"
+            - name: GITSYNC_MAX_FAILURES
+              value: "0"
+            - name: GIT_SYNC_ONE_TIME
+              value: "true"
+            - name: GITSYNC_ONE_TIME
+              value: "true"
+          resources: 
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: dags
+              mountPath: /git
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+      containers:
+        - name: dag-processor
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext: 
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          args: 
+            - bash
+            - -c
+            - exec airflow dag-processor
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: logs
+              mountPath: "/opt/airflow/logs"
+            - name: config
+              mountPath: "/opt/airflow/airflow.cfg"
+              subPath: airflow.cfg
+              readOnly: true
+            - name: config
+              mountPath: "/opt/airflow/config/airflow_local_settings.py"
+              subPath: airflow_local_settings.py
+              readOnly: true
+            - name: dags
+              mountPath: /opt/airflow/dags
+              readOnly: False
+          envFrom:
+            - secretRef:
+                name: nova-airflow-credentials
+            - secretRef:
+                name: nova-airflow-psql-credentials
+          env:          
+            - name: AIRFLOW_HOME
+              value: /opt/airflow
+        - name: dag-processor-log-groomer
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext: 
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          args:
+            - bash
+            - /clean-logs
+          env:
+            - name: AIRFLOW__LOG_RETENTION_DAYS
+              value: "7"
+            - name: AIRFLOW__LOG_CLEANUP_FREQUENCY_MINUTES
+              value: "15"
+            - name: AIRFLOW_HOME
+              value: "/opt/airflow"
+          volumeMounts:
+            - name: logs
+              mountPath: "/opt/airflow/logs"
+        - name: git-sync
+          image: ${imageRepository}/git-sync/git-sync:v4.3.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 65533
+          envFrom:
+            - secretRef:
+                name: nova-airflow-git-credentials
+            - secretRef:
+                name: nova-airflow-git-reference
+          env:
+            - name: GIT_SYNC_DEPTH
+              value: "1"
+            - name: GITSYNC_DEPTH
+              value: "1"
+            - name: GIT_SYNC_ROOT
+              value: "/git"
+            - name: GITSYNC_ROOT
+              value: "/git"
+            - name: GIT_SYNC_DEST
+              value: "repo"
+            - name: GITSYNC_LINK
+              value: "repo"
+            - name: GIT_SYNC_ADD_USER
+              value: "true"
+            - name: GITSYNC_ADD_USER
+              value: "true"
+            - name: GITSYNC_PERIOD
+              value: "5s"
+            - name: GIT_SYNC_MAX_SYNC_FAILURES
+              value: "0"
+            - name: GITSYNC_MAX_FAILURES
+              value: "0"
+          resources: 
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: dags
+              mountPath: /git
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: nova-airflow-config
+        - name: dags
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: logs
+          persistentVolumeClaim:
+            claimName: nova-airflow-logs
+        - name: trusted-ca-bundle
+          configMap:
+            name: trusted-ca-bundle
+            items:
+            - key: ca-certificates.pem
+              path: ca-certificates.crt
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nova-airflow-scheduler
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-scheduler
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+  annotations:
+    secret.reloader.stakater.com/reload: "nova-airflow-credentials,nova-airflow-psql-credentials"
+    configmap.reloader.stakater.com/reload: "nova-airflow-config,trusted-ca-bundle"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nova-airflow
+      app.kubernetes.io/instance: nova-airflow-scheduler
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nova-airflow
+        app.kubernetes.io/instance: nova-airflow-scheduler
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+        kubectl.kubernetes.io/default-container: scheduler
+        vault.security.banzaicloud.io/vault-path: nova-kubernetes
+        vault.security.banzaicloud.io/vault-role: nova-system-airflow
+        vault.security.banzaicloud.io/vault-trust-manager-tls-bundle: "trusted-ca-bundle"
+        vault.security.banzaicloud.io/run-as-non-root: "true"
+    spec:
+      serviceAccountName: nova-airflow-scheduler
+      priorityClassName: system-cluster-critical
+      tolerations: []
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: nova-airflow-scheduler
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 10
+      securityContext: 
+        runAsUser: 50000
+        fsGroup: 0
+        runAsGroup: 0
+      initContainers:
+        - name: secrets-webhook-mutation-helper
+          image: ${imageRepository}/nova/secrets-webhook-mutation-helper:v1.0.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: true
+          env:
+          - name: CA_CERT_PATH
+            value: /etc/ssl/certs/ca-certificates.crt
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+        - name: wait-for-airflow-migrations
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /opt/airflow/airflow.cfg
+              name: config
+              readOnly: true
+              subPath: airflow.cfg
+            - mountPath: /opt/airflow/config/airflow_local_settings.py
+              name: config
+              readOnly: true
+              subPath: airflow_local_settings.py
+          args:
+            - airflow
+            - db
+            - check-migrations
+            - --migration-wait-timeout=60
+          envFrom:
+            - secretRef:
+                name: nova-airflow-credentials
+            - secretRef:
+                name: nova-airflow-psql-credentials
+          env:
+            - name: AIRFLOW_HOME
+              value: /opt/airflow
+      containers:
+        - name: scheduler
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext: 
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          args: 
+            - bash
+            - -c
+            - exec airflow scheduler
+          envFrom:
+            - secretRef:
+                name: nova-airflow-credentials
+            - secretRef:
+                name: nova-airflow-psql-credentials
+          env:
+            - name: AIRFLOW_HOME
+              value: /opt/airflow
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: config
+              mountPath: /opt/airflow/pod_templates/pod_template_file.yaml
+              subPath: pod_template_file.yaml
+              readOnly: true
+            - name: logs
+              mountPath: /opt/airflow/logs
+            - name: config
+              mountPath: /opt/airflow/airflow.cfg
+              subPath: airflow.cfg
+              readOnly: true
+            - name: config
+              mountPath: /opt/airflow/config/airflow_local_settings.py
+              subPath: airflow_local_settings.py
+              readOnly: true
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+          ports:
+        - name: scheduler-log-groomer
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext: 
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          args:
+            - bash
+            - /clean-logs
+          env:
+            - name: AIRFLOW__LOG_RETENTION_DAYS
+              value: "7"
+            - name: AIRFLOW__LOG_CLEANUP_FREQUENCY_MINUTES
+              value: "15"
+            - name: AIRFLOW_HOME
+              value: "/opt/airflow"
+          volumeMounts:
+            - name: logs
+              mountPath: "/opt/airflow/logs"
+      volumes:
+        - name: config
+          configMap:
+            name: nova-airflow-config
+        - name: logs
+          persistentVolumeClaim:
+            claimName: nova-airflow-logs
+        - name: trusted-ca-bundle
+          configMap:
+            name: trusted-ca-bundle
+            items:
+            - key: ca-certificates.pem
+              path: ca-certificates.crt
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nova-airflow-statsd
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-statsd
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+  annotations:
+    configmap.reloader.stakater.com/reload: "nova-airflow-statsd"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nova-airflow
+      app.kubernetes.io/instance: nova-airflow-statsd
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nova-airflow
+        app.kubernetes.io/instance: nova-airflow-statsd
+    spec:
+      serviceAccountName: nova-airflow-statsd
+      priorityClassName: system-cluster-critical
+      tolerations: []
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      terminationGracePeriodSeconds: 30
+      securityContext: 
+        runAsUser: 65534
+        fsGroup: 0
+        runAsGroup: 0
+      restartPolicy: Always
+      containers:
+        - name: statsd
+          image: ${imageRepository}/prometheus/statsd-exporter:v0.28.0
+          imagePullPolicy: IfNotPresent
+          securityContext: 
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          args: 
+            - --statsd.mapping-config=/etc/statsd-exporter/mappings.yml
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          ports:
+            - name: statsd-ingest
+              protocol: UDP
+              containerPort: 9125
+            - name: statsd-scrape
+              containerPort: 9102
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 9102
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: 9102
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /etc/statsd-exporter/mappings.yml
+              subPath: mappings.yml
+      volumes:
+        - name: config
+          configMap:
+            name: nova-airflow-statsd
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nova-airflow-statsd
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-statsd
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9102"
+spec:
+  selector:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-statsd
+  ports:
+    - name: statsd-ingest
+      protocol: UDP
+      port: 9125
+      targetPort: 9125
+    - name: statsd-scrape
+      protocol: TCP
+      port: 9102
+      targetPort: 9102
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: nova-airflow-statsd
+  namespace: nova-monitoring
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-statsd
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nova-airflow
+      app.kubernetes.io/instance: nova-airflow-statsd
+  namespaceSelector:
+    matchNames:
+      - nova-airflow
+  endpoints:
+    - port: statsd-scrape
+      path: "/metrics"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nova-airflow-triggerer
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-triggerer
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+  annotations:
+    secret.reloader.stakater.com/reload: "nova-airflow-credentials,nova-airflow-psql-credentials,nova-airflow-git-credentials,nova-airflow-git-reference"
+    configmap.reloader.stakater.com/reload: "nova-airflow-config,trusted-ca-bundle"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nova-airflow
+      app.kubernetes.io/instance: nova-airflow-triggerer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nova-airflow
+        app.kubernetes.io/instance: nova-airflow-triggerer
+      annotations:
+        kubectl.kubernetes.io/default-container: triggerer
+        vault.security.banzaicloud.io/vault-path: nova-kubernetes
+        vault.security.banzaicloud.io/vault-role: nova-system-airflow
+        vault.security.banzaicloud.io/vault-trust-manager-tls-bundle: "trusted-ca-bundle"
+        vault.security.banzaicloud.io/run-as-non-root: "true"
+    spec:
+      serviceAccountName: nova-airflow-triggerer
+      priorityClassName: system-cluster-critical
+      tolerations: []
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      securityContext: 
+        runAsUser: 50000
+        fsGroup: 0
+        runAsGroup: 0
+      initContainers:
+        - name: secrets-webhook-mutation-helper
+          image: ${imageRepository}/nova/secrets-webhook-mutation-helper:v1.0.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: true
+          env:
+          - name: CA_CERT_PATH
+            value: /etc/ssl/certs/ca-certificates.crt
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+        - name: wait-for-airflow-migrations
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /opt/airflow/airflow.cfg
+              name: config
+              readOnly: true
+              subPath: airflow.cfg
+            - mountPath: /opt/airflow/config/airflow_local_settings.py
+              name: config
+              readOnly: true
+              subPath: airflow_local_settings.py
+          args:
+            - airflow
+            - db
+            - check-migrations
+            - --migration-wait-timeout=60
+          envFrom:
+            - secretRef:
+                name: nova-airflow-credentials
+            - secretRef:
+                name: nova-airflow-psql-credentials
+          env:
+            - name: AIRFLOW_HOME
+              value: /opt/airflow
+        - name: git-sync-init
+          image: ${imageRepository}/git-sync/git-sync:v4.3.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 65533
+          envFrom:
+            - secretRef:
+                name: nova-airflow-git-credentials
+            - secretRef:
+                name: nova-airflow-git-reference
+          env:
+            - name: GIT_SYNC_DEPTH
+              value: "1"
+            - name: GITSYNC_DEPTH
+              value: "1"
+            - name: GIT_SYNC_ROOT
+              value: "/git"
+            - name: GITSYNC_ROOT
+              value: "/git"
+            - name: GIT_SYNC_DEST
+              value: "repo"
+            - name: GITSYNC_LINK
+              value: "repo"
+            - name: GIT_SYNC_ADD_USER
+              value: "true"
+            - name: GITSYNC_ADD_USER
+              value: "true"
+            - name: GITSYNC_PERIOD
+              value: "5s"
+            - name: GIT_SYNC_MAX_SYNC_FAILURES
+              value: "0"
+            - name: GITSYNC_MAX_FAILURES
+              value: "0"
+            - name: GIT_SYNC_ONE_TIME
+              value: "true"
+            - name: GITSYNC_ONE_TIME
+              value: "true"
+          resources: 
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: dags
+              mountPath: /git
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+      containers:
+        - name: triggerer
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          args:
+            - bash
+            - -c
+            - exec airflow triggerer
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - mountPath: "/opt/airflow/logs"
+              name: logs
+            - name: config
+              mountPath: "/opt/airflow/airflow.cfg"
+              subPath: airflow.cfg
+              readOnly: true
+            - name: config
+              mountPath: "/opt/airflow/config/airflow_local_settings.py"
+              subPath: airflow_local_settings.py
+              readOnly: true
+            - name: dags
+              mountPath: /opt/airflow/dags
+              readOnly: False
+          ports:
+            - name: triggerer-logs
+              containerPort: 8794
+          envFrom:
+            - secretRef:
+                name: nova-airflow-credentials
+            - secretRef:
+                name: nova-airflow-psql-credentials
+          env:
+            - name: AIRFLOW_HOME
+              value: /opt/airflow
+        - name: triggerer-log-groomer
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext: 
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          args:
+            - bash
+            - /clean-logs
+          env:
+            - name: AIRFLOW__LOG_RETENTION_DAYS
+              value: "7"
+            - name: AIRFLOW__LOG_CLEANUP_FREQUENCY_MINUTES
+              value: "15"
+            - name: AIRFLOW_HOME
+              value: "/opt/airflow"
+          volumeMounts:
+            - name: logs
+              mountPath: "/opt/airflow/logs"
+        - name: git-sync
+          image: ${imageRepository}/git-sync/git-sync:v4.3.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 65533
+          envFrom:
+            - secretRef:
+                name: nova-airflow-git-credentials
+            - secretRef:
+                name: nova-airflow-git-reference
+          env:
+            - name: GIT_SYNC_DEPTH
+              value: "1"
+            - name: GITSYNC_DEPTH
+              value: "1"
+            - name: GIT_SYNC_ROOT
+              value: "/git"
+            - name: GITSYNC_ROOT
+              value: "/git"
+            - name: GIT_SYNC_DEST
+              value: "repo"
+            - name: GITSYNC_LINK
+              value: "repo"
+            - name: GIT_SYNC_ADD_USER
+              value: "true"
+            - name: GITSYNC_ADD_USER
+              value: "true"
+            - name: GITSYNC_PERIOD
+              value: "5s"
+            - name: GIT_SYNC_MAX_SYNC_FAILURES
+              value: "0"
+            - name: GITSYNC_MAX_FAILURES
+              value: "0"
+          resources: 
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: dags
+              mountPath: /git
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: nova-airflow-config
+        - name: dags
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: logs
+          persistentVolumeClaim:
+            claimName: nova-airflow-logs
+        - name: trusted-ca-bundle
+          configMap:
+            name: trusted-ca-bundle
+            items:
+            - key: ca-certificates.pem
+              path: ca-certificates.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nova-airflow-triggerer
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-triggerer
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+spec:
+  selector:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-triggerer
+  ports:
+    - name: triggerer-logs
+      protocol: TCP
+      port: 8794
+      targetPort: 8794
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airflow-vault-agent-config
+  namespace: nova-airflow
+data:
+  config.hcl: |
+    pid_file = "/var/run/secrets/vaultproject.io/pid"
+    auto_auth {
+        method "kubernetes" {
+            mount_path = "auth/nova-kubernetes"
+            config = {
+                role = "nova-system-airflow"
+            }
+        }
+        sink "file" {
+            config = {
+                path = "/var/run/secrets/vaultproject.io/token"
+            }
+        }
+    }
+
+    template_config {
+      exit_on_retry_failure = true
+      static_secret_render_interval = "10m"
+    }
+
+    template {
+      source      = "/tmp/agent/airflow/webserver_config.ctmpl"
+      destination = "/opt/airflow/webserver/webserver_config.py"
+      error_on_missing_key = true
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nova-airflow-webserver-config
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-webserver
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+data:
+  webserver_config.ctmpl: |-
+    from airflow.providers.fab.auth_manager.security_manager.override import FabAirflowSecurityManagerOverride
+    from flask_appbuilder.security.manager import AUTH_OAUTH
+    from typing import Any, List, Union
+    import requests
+
+    AUTH_TYPE = AUTH_OAUTH
+    AUTH_ROLES_SYNC_AT_LOGIN = True
+    AUTH_USER_REGISTRATION = True 
+
+    AUTH_ROLES_MAPPING = {
+        "Viewer": ["Viewer"],
+        "kubeadmins": ["Admin"],
+    }
+
+    OAUTH_PROVIDERS = [
+        {
+            "name": "nova-oauth",
+            "icon": "fa-sign-in",
+            "token_key": "access_token",
+            "remote_app": {
+    {{- with secret "identity/oidc/client/oidc-auth-airflow" }}
+                "client_id": "{{ .Data.client_id }}",
+                "client_secret": "{{ .Data.client_secret }}",
+    {{ end -}}
+                "client_kwargs": {
+                    "scope": "openid email groups",
+                    "token_endpoint_auth_method": "client_secret_post",
+                },
+    {{- with secret "identity/oidc/provider/nova" }}
+                "server_metadata_url": "{{ .Data.issuer }}/.well-known/openid-configuration",
+                "api_base_url": "{{ .Data.issuer }}",
+                "access_token_url": "{{ .Data.issuer }}/token",
+    {{ end -}}
+                "authorize_url": "https://nova-oauth.${dnsBaseDomain}/ui/vault/identity/oidc/provider/nova/authorize",
+                "jwks_uri": None,
+            },
+        },
+    ]
+
+    class StarvaultSecurityManager(FabAirflowSecurityManagerOverride):
+        def get_oauth_user_info(self, provider: str, resp: Any) -> dict[str, Union[str, list[str]]]:
+            if provider == "nova-oauth":
+                remote = self.appbuilder.sm.oauth_remotes[provider]
+                access_token = resp.get('access_token')
+                userinfo_url = f"{remote.api_base_url}/userinfo"
+                headers = {
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/json"
+                }
+                response = requests.get(userinfo_url, headers=headers)
+                data = response.json()
+                return {
+                    "email": data.get("email", ""),
+                    "role_keys": data.get("groups", []),
+                }
+
+    SECURITY_MANAGER_CLASS = StarvaultSecurityManager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nova-airflow-webserver
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-webserver
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+  annotations:
+    secret.reloader.stakater.com/reload: "nova-airflow-credentials,nova-airflow-psql-credentials"
+    configmap.reloader.stakater.com/reload: "nova-airflow-config,nova-airflow-webserver-config,airflow-vault-agent-config,trusted-ca-bundle"
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nova-airflow
+      app.kubernetes.io/instance: nova-airflow-webserver
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nova-airflow
+        app.kubernetes.io/instance: nova-airflow-webserver
+      annotations:
+        kubectl.kubernetes.io/default-container: webserver
+        vault.security.banzaicloud.io/vault-path: nova-kubernetes
+        vault.security.banzaicloud.io/vault-role: nova-system-airflow
+        vault.security.banzaicloud.io/vault-trust-manager-tls-bundle: "trusted-ca-bundle"
+        vault.security.banzaicloud.io/run-as-non-root: "true"
+    spec:
+      serviceAccountName: nova-airflow-webserver
+      priorityClassName: system-cluster-critical
+      tolerations: []
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/instance: nova-airflow-webserver
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      securityContext: 
+        runAsUser: 50000
+        fsGroup: 0
+        runAsGroup: 0
+      initContainers:
+        - name: secrets-webhook-mutation-helper
+          image: ${imageRepository}/nova/secrets-webhook-mutation-helper:v1.0.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: true
+          env:
+          - name: CA_CERT_PATH
+            value: /etc/ssl/certs/ca-certificates.crt
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+        - name: wait-for-airflow-migrations
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /opt/airflow/airflow.cfg
+              name: config
+              readOnly: true
+              subPath: airflow.cfg
+            - mountPath: /opt/airflow/config/airflow_local_settings.py
+              name: config
+              readOnly: true
+              subPath: airflow_local_settings.py
+          args:
+            - airflow
+            - db
+            - check-migrations
+            - --migration-wait-timeout=60
+          envFrom:
+            - secretRef:
+                name: nova-airflow-credentials
+            - secretRef:
+                name: nova-airflow-psql-credentials
+          env:
+            - name: AIRFLOW_HOME
+              value: /opt/airflow
+      containers:
+        - name: vault-agent
+          image: "${imageRepository}/starvault/starvault:v1.0.4"
+          env:
+            - name: STARVAULT_ADDR
+              value: https://nova-oauth.${dnsBaseDomain}
+            - name: STARVAULT_CACERT
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: SKIP_SETCAP
+              value: "true"
+          volumeMounts:
+            - name: vault-config
+              mountPath: /etc/vault/config.hcl
+              subPath: config.hcl
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+            - mountPath: /var/run/secrets/vaultproject.io
+              name: vault-agent-volume
+            - name: tmpl-config
+              mountPath: /tmp/agent/airflow/webserver_config.ctmpl
+              subPath: webserver_config.ctmpl
+            - name: config-volume
+              mountPath: /opt/airflow/webserver
+          args:
+            - agent
+            - -config=/etc/vault/config.hcl
+            - -log-level=debug
+          securityContext:
+            privileged: false
+          ports:
+            - containerPort: 8200
+              name: vault
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+        - name: webserver
+          image: ${imageRepository}/apache/airflow:2.10.5
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          args:
+            - bash
+            - -c
+            - exec airflow webserver
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - mountPath: "/opt/airflow/logs"
+              name: logs
+            - name: config
+              mountPath: "/opt/airflow/airflow.cfg"
+              subPath: airflow.cfg
+              readOnly: true
+            - name: config
+              mountPath: "/opt/airflow/config/airflow_local_settings.py"
+              subPath: airflow_local_settings.py
+              readOnly: true
+            - name: config
+              mountPath: /opt/airflow/pod_templates/pod_template_file.yaml
+              subPath: pod_template_file.yaml
+              readOnly: true
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+            - name: config-volume
+              mountPath: /opt/airflow/webserver
+          ports:
+            - name: airflow-ui
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+            periodSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 0
+            timeoutSeconds: 20
+            failureThreshold: 6
+            periodSeconds: 10
+          envFrom:
+            - secretRef:
+                name: nova-airflow-credentials
+            - secretRef:
+                name: nova-airflow-psql-credentials
+          env:
+            - name: AIRFLOW_HOME
+              value: /opt/airflow
+            - name: REQUESTS_CA_BUNDLE
+              value: "/etc/ssl/certs/ca-certificates.crt"
+            - name: CURL_CA_BUNDLE
+              value: "/etc/ssl/certs/ca-certificates.crt"
+      volumes:
+        - configMap:
+            name: nova-airflow-config
+          name: config
+        - name: logs
+          persistentVolumeClaim:
+            claimName: nova-airflow-logs
+        - name: trusted-ca-bundle
+          configMap:
+            name: trusted-ca-bundle
+            items:
+            - key: ca-certificates.pem
+              path: ca-certificates.crt
+        - name: tmpl-config
+          configMap:
+            name: nova-airflow-webserver-config
+        - name: config-volume
+          emptyDir:
+            sizeLimit: 5Mi
+            medium: Memory    
+        - name: vault-agent-volume
+          emptyDir:
+            sizeLimit: 1Mi
+            medium: Memory
+        - name: vault-config
+          configMap:
+            name: airflow-vault-agent-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nova-airflow-webserver
+  namespace: nova-airflow
+  labels:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-webserver
+    app.kubernetes.io/version: 2.10.5
+    app.kubernetes.io/managed-by: Nova
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: nova-airflow
+    app.kubernetes.io/instance: nova-airflow-webserver
+  ports:
+    - name: airflow-ui
+      port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nova-airflow-webserver
+  namespace: nova-airflow
+  annotations:
+    nginx.ingress.kubernetes.io/upstream-hash-by: $binary_remote_addr
+spec:
+  ingressClassName: nginx-public
+  rules:
+  - host: nova-airflow-main.${mlBaseDomain}
+    http:
+      paths:
+      - backend:
+          service:
+            name: nova-airflow-webserver
+            port:
+              number: 8080
+        path: /
+        pathType: Prefix
+  tls:
+    - hosts:
+        - nova-airflow-main.${mlBaseDomain}
+      secretName: ml-ingress-certificate
+---
+apiVersion: console.nova-platform.io/v1
+kind: ConsoleLink
+metadata:
+  name: airflow-console-link
+spec:
+  href: 'https://nova-airflow-main.${mlBaseDomain}'
+  location: ApplicationMenu
+  text: 'Airflow'
+  applicationMenu:
+    section: 'ML'
+    imageURL: 'data:image/png;base64,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'
+
