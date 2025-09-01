@@ -1,0 +1,843 @@
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: nova-ml-git
+  labels:
+    nova-platform.io/trusted-ca-bundle: enabled
+    nova-platform.io/cluster-monitoring: "true"
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+spec:
+  finalizers:
+    - kubernetes
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nova-ml-git
+  namespace: nova-ml-git
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nova-ml-git:secrets-webhook-mutation-helper
+  namespace: nova-ml-git
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - delete
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nova-ml-git:secrets-webhook-mutation-helper
+  namespace: nova-ml-git
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nova-ml-git:secrets-webhook-mutation-helper
+subjects:
+- kind: ServiceAccount
+  name: nova-ml-git
+  namespace: nova-ml-git
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nova-ml-git-auth
+  namespace: nova-ml-git
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+- kind: ServiceAccount
+  name: nova-ml-git
+  namespace: nova-ml-git
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nova-ml-git-inline-config
+  namespace: nova-ml-git
+  labels:
+    app.kubernetes.io/name: nova-ml-git
+type: Opaque
+stringData:
+  _generals_: |-
+    RUN_MODE=prod
+    APP_NAME="Nova AI DAGs Repository"
+  metrics: ENABLED=true
+  oauth2_client: |-
+    REGISTER_EMAIL_CONFIRM = false
+    ENABLE_AUTO_REGISTRATION = true
+    USERNAME = email
+  openid: |-
+    ENABLE_OPENID_SIGNIN = true
+    ENABLE_OPENID_SIGNUP = true
+  repository: |-
+    ROOT=/data/git/gitea-repositories
+    DEFAULT_BRANCH=master
+  service: |-
+    DISABLE_REGISTRATION=true
+  security: |-
+    INSTALL_LOCK=true
+  database: |-
+    DB_TYPE=sqlite3
+    PATH=/data/gitea.db
+    SQLITE_TIMEOUT=500
+  server: |-
+    HTTP_ADDR = 0.0.0.0
+    HTTP_PORT=3000
+    PROTOCOL=http
+    APP_DATA_PATH=/data
+    DOMAIN=nova-ml-git.nova-ml-git.svc.${k8sDefaultDnsZone}
+    ENABLE_PPROF=false
+    LFS_START_SERVER=true
+    DISABLE_SSH=true
+    ROOT_URL=https://nova-ml-git.${mlBaseDomain}
+  lfs: |-
+    PATH=/data/gitea/lfs
+  picture: |-
+    DISABLE_GRAVATAR=true
+  migrations: |-
+    MAX_ATTEMPTS=3
+    RETRY_BACKOFF=5
+    ALLOWED_DOMAINS=*
+    SKIP_TLS_VERIFY=true
+  other: |-
+    SHOW_FOOTER_BRANDING=false
+    SHOW_FOOTER_VERSION=false
+    ENABLE_SITEMAP=false
+    SHOW_FOOTER_TEMPLATE_LOAD_TIME=false
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nova-ml-git-env-config
+  namespace: nova-ml-git
+  labels:
+    app.kubernetes.io/name: nova-ml-git
+  annotations:
+    kustomize.toolkit.fluxcd.io/substitute: disabled
+type: Opaque
+stringData:
+  config_environment.sh: |-
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    function env2ini::log() {
+      printf "${1}\n"
+    }
+
+    function env2ini::read_config_to_env() {
+      local section="${1}"
+      local line="${2}"
+
+      if [[ -z "${line}" ]]; then
+        # skip empty line
+        return
+      fi
+
+      # 'xargs echo -n' trims all leading/trailing whitespaces and a trailing new line
+      local setting="$(awk -F '=' '{print $1}' <<< "${line}" | xargs echo -n)"
+
+      if [[ -z "${setting}" ]]; then
+        env2ini::log '  ! invalid setting'
+        exit 1
+      fi
+
+      local value=''
+      local regex="^${setting}(\s*)=(\s*)(.*)"
+      if [[ $line =~ $regex ]]; then
+        value="${BASH_REMATCH[3]}"
+      else
+        env2ini::log '  ! invalid setting'
+        exit 1
+      fi
+
+      env2ini::log "    + '${setting}'"
+
+      if [[ -z "${section}" ]]; then
+        export "GITEA____${setting^^}=${value}"                           # '^^' makes the variable content uppercase
+        return
+      fi
+
+      local masked_section="${section//./_0X2E_}"                            # '//' instructs to replace all matches
+      masked_section="${masked_section//-/_0X2D_}"
+
+      export "GITEA__${masked_section^^}__${setting^^}=${value}"        # '^^' makes the variable content uppercase
+    }
+
+    function env2ini::reload_preset_envs() {
+      env2ini::log "Reloading preset envs..."
+
+      while read -r line; do
+        if [[ -z "${line}" ]]; then
+          # skip empty line
+          return
+        fi
+
+        # 'xargs echo -n' trims all leading/trailing whitespaces and a trailing new line
+        local setting="$(awk -F '=' '{print $1}' <<< "${line}" | xargs echo -n)"
+
+        if [[ -z "${setting}" ]]; then
+          env2ini::log '  ! invalid setting'
+          exit 1
+        fi
+
+        local value=''
+        local regex="^${setting}(\s*)=(\s*)(.*)"
+        if [[ $line =~ $regex ]]; then
+          value="${BASH_REMATCH[3]}"
+        else
+          env2ini::log '  ! invalid setting'
+          exit 1
+        fi
+
+        env2ini::log "  + '${setting}'"
+
+        export "${setting^^}=${value}"                           # '^^' makes the variable content uppercase
+      done < "/tmp/existing-envs"
+
+      rm /tmp/existing-envs
+    }
+
+    function env2ini::process_config_file() {
+      local config_file="${1}"
+      local section="$(basename "${config_file}")"
+
+      if [[ $section == '_generals_' ]]; then
+        env2ini::log "  [ini root]"
+        section=''
+      else
+        env2ini::log "  ${section}"
+      fi
+
+      while read -r line; do
+        env2ini::read_config_to_env "${section}" "${line}"
+      done < <(awk 1 "${config_file}")                             # Helm .toYaml trims the trailing new line which breaks line processing; awk 1 ... adds it back while reading
+    }
+
+    function env2ini::load_config_sources() {
+      local path="${1}"
+
+      if [[ -d "${path}" ]]; then
+        env2ini::log "Processing $(basename "${path}")..."
+
+        while read -d '' configFile; do
+          env2ini::process_config_file "${configFile}"
+        done < <(find "${path}" -type l -not -name '..data' -print0)
+
+        env2ini::log "\n"
+      fi
+    }
+
+    function env2ini::generate_initial_secrets() {
+      # These environment variables will either be
+      #   - overwritten with user defined values,
+      #   - initially used to set up Gitea
+      # Anyway, they won't harm existing app.ini files
+
+      export GITEA__SECURITY__INTERNAL_TOKEN=$(gitea generate secret INTERNAL_TOKEN)
+      export GITEA__SECURITY__SECRET_KEY=$(gitea generate secret SECRET_KEY)
+      export GITEA__OAUTH2__JWT_SECRET=$(gitea generate secret JWT_SECRET)
+      export GITEA__SERVER__LFS_JWT_SECRET=$(gitea generate secret LFS_JWT_SECRET)
+
+      env2ini::log "...Initial secrets generated\n"
+    }
+
+    env | (grep GITEA || [[ $? == 1 ]]) > /tmp/existing-envs
+
+    # MUST BE CALLED BEFORE OTHER CONFIGURATION
+    env2ini::generate_initial_secrets
+
+    env2ini::load_config_sources '/env-to-ini-mounts/inlines/'
+    env2ini::load_config_sources '/env-to-ini-mounts/additionals/'
+
+    # load existing envs to override auto generated envs
+    env2ini::reload_preset_envs
+
+    env2ini::log "=== All configuration sources loaded ===\n"
+
+    # safety to prevent rewrite of secret keys if an app.ini already exists
+    if [ -f ${GITEA_APP_INI} ]; then
+      env2ini::log 'An app.ini file already exists. To prevent overwriting secret keys, these settings are dropped and remain unchanged:'
+      env2ini::log '  - security.INTERNAL_TOKEN'
+      env2ini::log '  - security.SECRET_KEY'
+      env2ini::log '  - oauth2.JWT_SECRET'
+      env2ini::log '  - server.LFS_JWT_SECRET'
+
+      unset GITEA__SECURITY__INTERNAL_TOKEN
+      unset GITEA__SECURITY__SECRET_KEY
+      unset GITEA__OAUTH2__JWT_SECRET
+      unset GITEA__SERVER__LFS_JWT_SECRET
+    fi
+
+    environment-to-ini -o $GITEA_APP_INI
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: nova-ml-git-init-config
+  namespace: nova-ml-git
+  labels:
+    app.kubernetes.io/name: nova-ml-git
+  annotations:
+    kustomize.toolkit.fluxcd.io/substitute: disabled
+type: Opaque
+stringData:
+  init_directory_structure.sh: |-
+    #!/usr/bin/env bash
+
+    set -euo pipefail
+
+    set -x
+    mkdir -p /data/git/.ssh
+    chmod -R 700 /data/git/.ssh
+    [ ! -d /data/gitea/conf ] && mkdir -p /data/gitea/conf
+    [ ! -d /data/gitea/lfs ] && mkdir -p /data/gitea/lfs
+
+    # prepare temp directory structure
+    mkdir -p "${GITEA_TEMP}"
+    chmod ug+rwx "${GITEA_TEMP}"
+
+  configure_gitea.sh: |-
+    #!/usr/bin/env bash
+
+    set -euo pipefail
+
+    echo '==== BEGIN GITEA CONFIGURATION ===='
+
+    { # try
+      gitea migrate
+    } || { # catch
+      echo "Gitea migrate might fail due to database connection...This init-container will try again in a few seconds"
+      exit 1
+    }
+
+    function configure_admin_user() {
+      local ACCOUNT_ID=$(gitea admin user list --admin | grep -e "\s\+${GITEA_ADMIN_USERNAME}\s\+" | awk -F " " "{printf \$1}")
+      if [[ -z "${ACCOUNT_ID}" ]]; then
+        local -a create_args
+        create_args=(--admin --username "${GITEA_ADMIN_USERNAME}" --password "${GITEA_ADMIN_PASSWORD}" --email "gitea@local.domain")
+        if [[ "${GITEA_ADMIN_PASSWORD_MODE}" = initialOnlyRequireReset ]]; then
+          create_args+=(--must-change-password=true)
+        else
+          create_args+=(--must-change-password=false)
+        fi
+        echo "No admin user '${GITEA_ADMIN_USERNAME}' found. Creating now..."
+        gitea admin user create "${create_args[@]}"
+        echo '...created.'
+      else
+        if [[ "${GITEA_ADMIN_PASSWORD_MODE}" = keepUpdated ]]; then
+          echo "Admin account '${GITEA_ADMIN_USERNAME}' already exist. Running update to sync password..."
+          # See https://gitea.com/gitea/helm-chart/issues/673
+          # --must-change-password argument was added to change-password, defaulting to true, counter to the previous behavior
+          #   which acted as if it were provided with =false. If the argument is present in this version of gitea, then we
+          #   should add it to prevent requiring frequent admin password resets.
+          local -a change_args
+          change_args=(--username "${GITEA_ADMIN_USERNAME}" --password "${GITEA_ADMIN_PASSWORD}")
+          if gitea admin user change-password --help | grep -qF -- '--must-change-password'; then
+            change_args+=(--must-change-password=false)
+          fi
+          gitea admin user change-password "${change_args[@]}"
+          echo '...password sync done.'
+        else
+          echo "Admin account '${GITEA_ADMIN_USERNAME}' already exist, but update mode is set to '${GITEA_ADMIN_PASSWORD_MODE}'. Skipping."
+        fi
+      fi
+    }
+
+    configure_admin_user
+
+    function configure_oauth() {
+      local OAUTH_NAME=$(gitea admin auth list | grep -i oauth2 | awk '{print $2}' | tr -d "\n")
+      if [[ "${OAUTH_NAME}" != "nova-oidc" ]]; then
+        echo "Nova OIDC provider not found. Creating now..."
+        gitea admin auth add-oauth --name nova-oidc --provider openidConnect --key "${OAUTH2_CLIENT_ID}" --secret "${OAUTH2_CLIENT_SECRET}"  --auto-discover-url "${OAUTH2_OIDC_ISSUER_URL}/.well-known/openid-configuration" --scopes "email" --scopes "groups" --group-claim-name "groups" --admin-group "kubeadmins"
+      else
+        echo 'OIDC provider already exists...skipping.'
+      fi
+    }
+
+    configure_oauth
+
+    echo '==== END GITEA CONFIGURATION ===='
+  configure_gitea_project.sh: |-
+    #!/usr/bin/env bash
+
+    set -euo pipefail
+
+    echo '==== START GITEA BEFORE CONFIGURATION ===='
+    nohup /usr/local/bin/gitea -c ${GITEA_APP_INI} web &
+    while ! curl http://localhost:3000 -o /dev/null -s --head --fail; do
+      sleep 5 && echo "Waiting Gitea startup..."
+    done
+
+    echo '==== BEGIN GITEA CONFIGURATION ===='
+
+    GITEA_ADMIN_AUTH=`echo -n "${GITEA_ADMIN_USERNAME}:${GITEA_ADMIN_PASSWORD}" | base64 -w0`
+    GITEA_AUTH_HEADER="Authorization: Basic ${GITEA_ADMIN_AUTH}"
+    GITEA_API_URL='http://localhost:3000/api/v1'
+
+    function configure_gitea_organization () {
+      if [[ $(curl -s -H "${GITEA_AUTH_HEADER}" -H 'Content-Type: application/json' -X GET ${GITEA_API_URL}/orgs/container-platform -o /dev/null -w "%{http_code}") -ne "200" ]]; then
+        echo "No default organization found. Creating now..."
+        curl -s -k -H "${GITEA_AUTH_HEADER}" -H 'Content-Type: application/json' -X POST ${GITEA_API_URL}/orgs -d @- <<-EOF
+        {
+          "description": "Nova AI DAGs Repository",
+          "full_name": "container-platform",
+          "location": "Moscow, Russia",
+          "repo_admin_change_team_access": true,
+          "username": "container-platform",
+          "visibility": "private",
+          "website": "https://nova-platform.io"
+        }
+    EOF
+      else
+       echo "Default organization already exists... skipping."
+      fi
+    }
+
+    configure_gitea_organization
+
+    function configure_airflow_repository() {
+      if [[ $(curl -s -H "${GITEA_AUTH_HEADER}" -H 'Content-Type: application/json' -X GET ${GITEA_API_URL}/repos/container-platform/airflow -o /dev/null -w "%{http_code}") -ne "200" ]]; then
+        echo "No airflow repository found. Creating now..."
+        
+        curl -s -k -H "${GITEA_AUTH_HEADER}" -H 'Content-Type: application/json' -X POST ${GITEA_API_URL}/orgs/container-platform/repos -d @- <<EOF
+        {
+          "name": "airflow",
+          "description": "Nova AI DAGs Repository",
+          "private": true,
+          "auto_init": true,
+          "default_branch": "main"
+        }
+    EOF
+
+        echo "Waiting 5 seconds for repository initialization..." && sleep 5
+
+        curl -s -k -H "${GITEA_AUTH_HEADER}" -H 'Content-Type: application/json' \
+          -X POST ${GITEA_API_URL}/repos/container-platform/airflow/contents/README.md \
+          -d @- <<EOF
+        {
+          "message": "Add README.md",
+          "content": "$(echo -n "Nova AI DAGs Repository" | base64 -w0)"
+        }
+    EOF
+
+        local DAG_CONTENT=$(cat <<'DAG_EOF'
+    from airflow import DAG
+    from airflow.operators.python import PythonOperator
+    from datetime import datetime
+
+    def print_hello():
+        print("Hello from Git-synced DAG!")
+
+    with DAG(
+        dag_id="hello_git_dag",
+        schedule_interval="@daily",
+        start_date=datetime(2024, 1, 1),
+        catchup=False,
+        tags=["git"],
+    ) as dag:
+        hello = PythonOperator(
+            task_id="say_hello",
+            python_callable=print_hello
+        )
+    DAG_EOF
+        )
+
+        curl -s -k -H "${GITEA_AUTH_HEADER}" -H 'Content-Type: application/json' \
+          -X POST ${GITEA_API_URL}/repos/container-platform/airflow/contents/dags/hello_dag.py \
+          -d @- <<EOF
+        {
+          "message": "Create dags directory",
+          "content": "$(echo -n "$DAG_CONTENT" | base64 -w0)"
+        }
+    EOF
+
+        echo "Airflow repository with sample DAG created successfully."
+      else
+        echo "Airflow repository already exists... skipping creation."
+      fi
+    }
+
+    configure_airflow_repository
+
+    echo '==== END GITEA CONFIGURATION ===='
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nova-ml-git
+  namespace: nova-ml-git
+  labels:
+    app.kubernetes.io/name: nova-ml-git
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: http
+    port: 3000
+    targetPort: 3000
+  selector:
+    app.kubernetes.io/name: nova-ml-git
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nova-ml-git
+  namespace: nova-ml-git
+  annotations:
+    reloader.stakater.com/auto: "false"
+    secret.reloader.stakater.com/reload: "nova-ml-git-init-config,nova-ml-git-env-config,nova-ml-git-inline-config"
+    configmap.reloader.stakater.com/reload: "trusted-ca-bundle"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nova-ml-git
+  serviceName: nova-ml-git
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nova-ml-git
+      annotations:
+        kubectl.kubernetes.io/default-container: gitea
+        vault.security.banzaicloud.io/vault-role: "nova-ml-git"
+        vault.security.banzaicloud.io/vault-path: "nova-kubernetes"
+        vault.security.banzaicloud.io/vault-trust-manager-tls-bundle: "trusted-ca-bundle"
+        vault.security.banzaicloud.io/run-as-non-root: "true"
+    spec:
+      priorityClassName: system-cluster-critical
+      securityContext:
+        fsGroup: 1000
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      tolerations: []
+      serviceAccount: nova-ml-git
+      initContainers:
+        - name: secrets-webhook-mutation-helper
+          image: "${imageRepository}/nova/secrets-webhook-mutation-helper:v1.0.0"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: true
+          env:
+          - name: CA_CERT_PATH
+            value: /etc/ssl/certs/ca-certificates.crt
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+        - name: init-directories
+          image: "${imageRepository}/gitea/gitea:1.23.4-rootless"
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/sbin/init_directory_structure.sh"]
+          env:
+            - name: GITEA_APP_INI
+              value: /data/gitea/conf/app.ini
+            - name: GITEA_CUSTOM
+              value: /data/gitea
+            - name: GITEA_WORK_DIR
+              value: /data
+            - name: GITEA_TEMP
+              value: /tmp/gitea
+          envFrom:
+          - configMapRef:
+              name: nova-http-proxy-config
+              optional: true
+          volumeMounts:
+            - name: init
+              mountPath: /usr/sbin
+            - name: temp
+              mountPath: /tmp
+            - name: data
+              mountPath: /data
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              add:
+              - SYS_CHROOT
+              drop:
+              - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+        - name: init-app-ini
+          image: "${imageRepository}/gitea/gitea:1.23.4-rootless"
+          imagePullPolicy: IfNotPresent
+          command: ["/usr/sbin/config_environment.sh"]
+          env:
+            - name: GITEA_APP_INI
+              value: /data/gitea/conf/app.ini
+            - name: GITEA_CUSTOM
+              value: /data/gitea
+            - name: GITEA_WORK_DIR
+              value: /data
+            - name: GITEA_TEMP
+              value: /tmp/gitea
+          envFrom:
+          - configMapRef:
+              name: nova-http-proxy-config
+              optional: true
+          volumeMounts:
+            - name: config
+              mountPath: /usr/sbin
+            - name: temp
+              mountPath: /tmp
+            - name: data
+              mountPath: /data
+            - name: nova-ml-git-inline-config-sources
+              mountPath: /env-to-ini-mounts/inlines/
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              add:
+              - SYS_CHROOT
+              drop:
+              - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+        - name: configure-gitea
+          image: "${imageRepository}/gitea/gitea:1.23.4-rootless"
+          command: ["/usr/sbin/configure_gitea.sh"]
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GITEA_APP_INI
+              value: /data/gitea/conf/app.ini
+            - name: GITEA_CUSTOM
+              value: /data/gitea
+            - name: GITEA_WORK_DIR
+              value: /data
+            - name: GITEA_TEMP
+              value: /tmp/gitea
+            - name: GITEA_ADMIN_USERNAME
+              value: vault:nova-secrets/data/credentials/ml/git#admin_username
+            - name: GITEA_ADMIN_PASSWORD
+              value: vault:nova-secrets/data/credentials/ml/git#admin_password
+            - name: GITEA_ADMIN_PASSWORD_MODE
+              value: keepUpdated
+            - name: OAUTH2_CLIENT_ID
+              value: vault:identity/oidc/client/oidc-auth-ml-git#client_id
+            - name: OAUTH2_CLIENT_SECRET
+              value: vault:identity/oidc/client/oidc-auth-ml-git#client_secret
+            - name: OAUTH2_OIDC_ISSUER_URL
+              value: vault:identity/oidc/provider/nova#issuer
+          envFrom:
+          - configMapRef:
+              name: nova-http-proxy-config
+              optional: true
+          volumeMounts:
+            - name: init
+              mountPath: /usr/sbin
+            - name: temp
+              mountPath: /tmp
+            - name: data
+              mountPath: /data
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              add:
+              - SYS_CHROOT
+              drop:
+              - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+        - name: configure-gitea-project
+          image: "${imageRepository}/gitea/gitea:1.23.4-rootless"
+          command: ["/usr/sbin/configure_gitea_project.sh"]
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GITEA_APP_INI
+              value: /data/gitea/conf/app.ini
+            - name: GITEA_CUSTOM
+              value: /data/gitea
+            - name: GITEA_WORK_DIR
+              value: /data
+            - name: GITEA_TEMP
+              value: /tmp/gitea
+            - name: GITEA_ADMIN_USERNAME
+              value: vault:nova-secrets/data/credentials/ml/git#admin_username
+            - name: GITEA_ADMIN_PASSWORD
+              value: vault:nova-secrets/data/credentials/ml/git#admin_password
+          envFrom:
+          - configMapRef:
+              name: nova-http-proxy-config
+              optional: true
+          volumeMounts:
+            - name: init
+              mountPath: /usr/sbin
+            - name: temp
+              mountPath: /tmp
+            - name: data
+              mountPath: /data
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              add:
+              - SYS_CHROOT
+              drop:
+              - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: gitea
+          image: "${imageRepository}/gitea/gitea:1.23.4-rootless"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: GITEA_APP_INI
+              value: /data/gitea/conf/app.ini
+            - name: GITEA_CUSTOM
+              value: /data/gitea
+            - name: GITEA_WORK_DIR
+              value: /data
+            - name: GITEA_TEMP
+              value: /tmp/gitea
+            - name: TMPDIR
+              value: /tmp/gitea
+          envFrom:
+          - configMapRef:
+              name: nova-http-proxy-config
+              optional: true
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              add:
+              - SYS_CHROOT
+              drop:
+              - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsGroup: 1000
+            runAsNonRoot: true
+            runAsUser: 1000
+          ports:
+            - name: http
+              containerPort: 3000
+          livenessProbe:
+            failureThreshold: 10
+            initialDelaySeconds: 200
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: http
+            timeoutSeconds: 1
+          readinessProbe:
+            failureThreshold: 3
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: http
+            timeoutSeconds: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+          volumeMounts:
+            - name: temp
+              mountPath: /tmp
+            - name: data
+              mountPath: /data
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+      volumes:
+        - name: init
+          secret:
+            secretName: nova-ml-git-init-config
+            defaultMode: 110
+        - name: config
+          secret:
+            secretName: nova-ml-git-env-config
+            defaultMode: 110
+        - name: nova-ml-git-inline-config-sources
+          secret:
+            secretName: nova-ml-git-inline-config
+        - name: temp
+          emptyDir:
+            sizeLimit: 50Mi
+            medium: Memory
+        - name: trusted-ca-bundle
+          configMap:
+            name: trusted-ca-bundle
+            items:
+            - key: ca-certificates.pem
+              path: ca-certificates.crt
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+      labels:
+        app.kubernetes.io/name: nova-ml-git
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: "${giteaStorageClass}"
+      resources:
+        requests:
+          storage: 50Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nova-ml-git
+  namespace: nova-ml-git
+spec:
+  ingressClassName: nginx-public
+  rules:
+  - host: nova-ml-git.${mlBaseDomain}
+    http:
+      paths:
+      - backend:
+          service:
+            name: nova-ml-git
+            port:
+              number: 3000
+        path: /
+        pathType: ImplementationSpecific
+  tls:
+  - hosts:
+    - nova-ml-git.${mlBaseDomain}
+    secretName: ml-ingress-certificate
+
