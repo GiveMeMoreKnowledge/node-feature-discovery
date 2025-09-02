@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nova-postgresql
+  labels:
+    nova-platform.io/trusted-ca-bundle: enabled
+    nova-platform.io/cluster-monitoring: "true"
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+spec:
+  finalizers:
+    - kubernetes
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: nova-postgres-tls
+  namespace: nova-postgresql
+spec:
+  secretName: nova-postgres-tls
+  duration: 8760h # 1 year
+  renewBefore: 360h # 15 days
+  subject:
+    organizations:
+      - ORIONSOFT.RU
+    organizationalUnits:
+      - nova-postgresql
+    countries:
+      - RU
+    localities:
+      - Moscow
+  dnsNames:
+    - nova-ml-postgresql
+    - nova-ml-postgresql.nova-postgresql.svc
+    - nova-ml-postgresql.nova-postgresql.svc.${k8sDefaultDnsZone}
+  issuerRef:
+    name: nova-dynamic-internal-cluster-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io

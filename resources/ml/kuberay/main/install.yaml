@@ -1,0 +1,427 @@
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: nova-kuberay
+  labels:
+    nova-platform.io/trusted-ca-bundle: enabled
+    nova-platform.io/cluster-monitoring: "true"
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+spec:
+  finalizers:
+    - kubernetes
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nova-kuberay-operator
+  namespace: nova-kuberay
+  labels:
+    app.kubernetes.io/name: nova-kuberay-operator
+    app.kubernetes.io/version: 1.3.2
+    app.kubernetes.io/managed-by: Nova
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nova-kuberay-operator
+  namespace: nova-kuberay
+  labels:
+    app.kubernetes.io/name: nova-kuberay-operator
+    app.kubernetes.io/version: 1.3.2
+    app.kubernetes.io/managed-by: Nova
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - endpoints
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - events
+      - pods/status
+      - services
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods/proxy
+      - services/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - services/proxy
+    verbs:
+      - create
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - get
+      - list
+      - update
+  - apiGroups:
+      - extensions
+      - networking.k8s.io
+    resources:
+      - ingresses
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - ingressclasses
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ray.io
+    resources:
+      - rayclusters
+      - rayjobs
+      - rayservices
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ray.io
+    resources:
+      - rayclusters/finalizers
+      - rayjobs/finalizers
+      - rayservices/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - ray.io
+    resources:
+      - rayclusters/status
+      - rayjobs/status
+      - rayservices/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - rolebindings
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - update
+      - watch
+  - apiGroups:
+      - route.openshift.io
+    resources:
+      - routes
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nova-kuberay-operator-leader-election
+  namespace: nova-kuberay
+  labels:
+    app.kubernetes.io/name: nova-kuberay-operator
+    app.kubernetes.io/version: 1.3.2
+    app.kubernetes.io/managed-by: Nova
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+    - ""
+    resources:
+      - events
+    verbs:
+      - create
+  - apiGroups:
+    - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - get
+      - list
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nova-kuberay-operator
+  namespace: nova-kuberay
+  labels:
+    app.kubernetes.io/name: nova-kuberay-operator
+    app.kubernetes.io/version: 1.3.2
+    app.kubernetes.io/managed-by: Nova
+subjects:
+  - kind: ServiceAccount
+    name: nova-kuberay-operator
+    namespace: nova-kuberay
+roleRef:
+  kind: Role
+  name: nova-kuberay-operator
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nova-kuberay-operator-leader-election
+  namespace: nova-kuberay
+  labels:
+    app.kubernetes.io/name: nova-kuberay-operator
+    app.kubernetes.io/version: 1.3.2
+    app.kubernetes.io/managed-by: Nova
+subjects:
+  - kind: ServiceAccount
+    name: nova-kuberay-operator
+    namespace: nova-kuberay
+roleRef:
+  kind: Role
+  name: nova-kuberay-operator-leader-election
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nova-kuberay-operator
+  namespace: nova-kuberay
+  labels:
+    app.kubernetes.io/name: nova-kuberay-operator
+    app.kubernetes.io/version: 1.3.2
+    app.kubernetes.io/managed-by: Nova
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nova-kuberay-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nova-kuberay-operator
+    spec:
+      serviceAccountName: nova-kuberay-operator
+      priorityClassName: system-cluster-critical
+      containers:
+        - name: operator
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+              - ALL
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
+          image: ${imageRepository}/kuberay/operator:v1.3.2
+          imagePullPolicy: IfNotPresent
+          command: 
+            - "/manager"
+          args:
+            - "--feature-gates=RayClusterStatusConditions=true,RayJobDeletionPolicy=false"
+            - "--watch-namespace=nova-kuberay"
+            - "--enable-leader-election=true"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: CLUSTER_DOMAIN
+              value: ${k8sDefaultDnsZone}
+            - name: ENABLE_PROBES_INJECTION
+              value: "true"
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      tolerations:
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nova-kuberay-operator
+  namespace: nova-kuberay
+  labels:
+    app.kubernetes.io/name: nova-kuberay-operator
+    app.kubernetes.io/version: 1.3.2
+    app.kubernetes.io/managed-by: Nova
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: nova-kuberay-operator
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: nova-ray-head-monitor
+  namespace: nova-monitoring
+  labels:
+    app.kubernetes.io/part-of: nova-kuberay
+spec:
+  jobLabel: ray-head
+  namespaceSelector:
+    matchNames:
+      - nova-kuberay
+  selector:
+    matchLabels:
+      ray.io/node-type: head
+  podMetricsEndpoints:
+    - port: metrics
+      relabelings:
+        - action: replace
+          sourceLabels:
+            - __meta_kubernetes_pod_label_ray_io_cluster
+          targetLabel: ray_io_cluster
+    - port: as-metrics
+      relabelings:
+        - action: replace
+          sourceLabels:
+            - __meta_kubernetes_pod_label_ray_io_cluster
+          targetLabel: ray_io_cluster
+    - port: dash-metrics
+      relabelings:
+        - action: replace
+          sourceLabels:
+            - __meta_kubernetes_pod_label_ray_io_cluster
+          targetLabel: ray_io_cluster
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: nova-ray-workers-monitor
+  namespace: nova-monitoring
+  labels:
+    app.kubernetes.io/part-of: nova-kuberay
+spec:
+  jobLabel: ray-workers
+  namespaceSelector:
+    matchNames:
+      - nova-kuberay
+  selector:
+    matchLabels:
+      ray.io/node-type: worker
+  podMetricsEndpoints:
+  - port: metrics
+    relabelings:
+    - sourceLabels: [__meta_kubernetes_pod_label_ray_io_cluster]
+      targetLabel: ray_io_cluster
+

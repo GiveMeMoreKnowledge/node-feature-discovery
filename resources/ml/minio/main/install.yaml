@@ -1,0 +1,479 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nova-minio-operator
+  namespace: nova-minio
+  labels:
+    app.kubernetes.io/name: nova-minio-operator
+    app.kubernetes.io/version: v7.1.0
+    app.kubernetes.io/managed-by: Nova
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nova-minio-operator-role
+  labels:
+    app.kubernetes.io/name: nova-minio-operator
+    app.kubernetes.io/version: v7.1.0
+    app.kubernetes.io/managed-by: Nova
+rules:
+  - apiGroups:
+      - "apiextensions.k8s.io"
+    resources:
+      - customresourcedefinitions
+    verbs:
+      - get
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims
+    verbs:
+      - get
+      - update
+      - list
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+      - nodes
+    verbs:
+      - create
+      - get
+      - watch
+      - list
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - services
+      - events
+      - configmaps
+    verbs:
+      - get
+      - watch
+      - create
+      - list
+      - delete
+      - deletecollection
+      - update
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+      - watch
+      - create
+      - update
+      - list
+      - delete
+      - deletecollection
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+      - rolebindings
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - statefulsets
+      - deployments
+      - deployments/finalizers
+    verbs:
+      - get
+      - create
+      - list
+      - patch
+      - watch
+      - update
+      - delete
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+    verbs:
+      - get
+      - create
+      - list
+      - patch
+      - watch
+      - update
+      - delete
+  - apiGroups:
+      - "certificates.k8s.io"
+    resources:
+      - "certificatesigningrequests"
+      - "certificatesigningrequests/approval"
+      - "certificatesigningrequests/status"
+    verbs:
+      - update
+      - create
+      - get
+      - delete
+      - list
+  - apiGroups:
+      - certificates.k8s.io
+    resourceNames:
+      - kubernetes.io/legacy-unknown
+      - kubernetes.io/kube-apiserver-client
+      - kubernetes.io/kubelet-serving
+      - beta.eks.amazonaws.com/app-serving
+    resources:
+      - signers
+    verbs:
+      - approve
+      - sign
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+  - apiGroups:
+      - minio.min.io
+      - sts.min.io
+      - job.min.io
+    resources:
+      - "*"
+    verbs:
+      - "*"
+  - apiGroups:
+      - min.io
+    resources:
+      - "*"
+    verbs:
+      - "*"
+  - apiGroups:
+      - monitoring.coreos.com
+    resources:
+      - prometheuses
+      - prometheusagents
+    verbs:
+      - get
+      - update
+      - list
+  - apiGroups:
+      - "coordination.k8s.io"
+    resources:
+      - leases
+    verbs:
+      - get
+      - update
+      - create
+  - apiGroups:
+      - policy
+    resources:
+      - poddisruptionbudgets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - deletecollection
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nova-minio-operator-binding
+  labels:
+    app.kubernetes.io/name: nova-minio-operator
+    app.kubernetes.io/version: v7.1.0
+    app.kubernetes.io/managed-by: Nova
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nova-minio-operator-role
+subjects:
+  - kind: ServiceAccount
+    name: nova-minio-operator
+    namespace: nova-minio
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nova-minio-operator
+  namespace: nova-minio
+  labels:
+    app.kubernetes.io/name: nova-minio-operator
+    app.kubernetes.io/version: v7.1.0
+    app.kubernetes.io/managed-by: Nova
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nova-minio-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nova-minio-operator
+    spec:
+      serviceAccountName: nova-minio-operator
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        fsGroup: 1000
+      priorityClassName: system-cluster-critical
+      containers:
+        - name: operator
+          image: "${imageRepository}/minio/operator:v7.1.0"
+          imagePullPolicy: IfNotPresent
+          args:
+            - controller
+          env:
+            - name: "OPERATOR_SIDECAR_IMAGE"
+              value: "${imageRepository}/minio/operator-sidecar:v7.1.0"
+            - name: OPERATOR_STS_ENABLED
+              value: "on"
+            - name: OPERATOR_STS_AUTO_TLS_ENABLED
+              value: "off"
+            - name: WATCHED_NAMESPACE
+              value: ""
+            - name: CLUSTER_DOMAIN
+              value: "${k8sDefaultDnsZone}"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+              ephemeral-storage: 500Mi
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      tolerations: []
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nova-minio-operator
+  namespace: nova-minio
+  labels:
+    app.kubernetes.io/name: nova-minio-operator
+    app.kubernetes.io/version: v7.1.0
+    app.kubernetes.io/managed-by: Nova
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4221
+      name: http
+  selector:
+    operator: leader
+    app.kubernetes.io/name: nova-minio-operator
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nova-minio-sts
+  namespace: nova-minio
+  labels:
+    app.kubernetes.io/name: nova-minio-operator
+    app.kubernetes.io/version: v7.1.0
+    app.kubernetes.io/managed-by: Nova
+spec:
+  type: ClusterIP
+  ports:
+    - port: 4223
+      name: https
+  selector:
+    app.kubernetes.io/name: nova-minio-operator
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: minio-create-secret
+  namespace: nova-minio
+  labels:
+    app.kubernetes.io/name: minio-create-secret
+    app.kubernetes.io/managed-by: Nova
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: minio-create-secret
+  namespace: nova-minio
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:auth-delegator
+subjects:
+  - kind: ServiceAccount
+    name: minio-create-secret
+    namespace: nova-minio
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nova-minio:secrets-webhook-mutation-helper
+  namespace: nova-minio
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - delete
+      - get
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: minio-vault-secret-create
+  namespace: nova-minio
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - "secrets"
+    verbs:
+      - "get"
+      - "watch"
+      - "list"
+      - "create"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nova-minio:secrets-webhook-mutation-helper
+  namespace: nova-minio
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nova-minio:secrets-webhook-mutation-helper
+subjects:
+  - kind: ServiceAccount
+    name: minio-create-secret
+    namespace: nova-minio
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: minio-vault-secret-create
+  namespace: nova-minio
+subjects:
+  - kind: ServiceAccount
+    name: minio-create-secret
+    namespace: nova-minio
+roleRef:
+  kind: Role
+  name: minio-vault-secret-create
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-generate-config-secret
+  namespace: nova-minio
+spec:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nova-minio
+        app.kubernetes.io/instance: minio-generate-config-secret
+      annotations:
+        kubectl.kubernetes.io/default-container: create-secret
+        vault.security.banzaicloud.io/vault-path: nova-kubernetes
+        vault.security.banzaicloud.io/vault-role: nova-system-minio
+        vault.security.banzaicloud.io/vault-trust-manager-tls-bundle: "trusted-ca-bundle"
+        vault.security.banzaicloud.io/run-as-non-root: "true"
+    spec:
+      serviceAccountName: minio-create-secret
+      priorityClassName: system-cluster-critical
+      restartPolicy: Never
+      initContainers:
+        - name: secrets-webhook-mutation-helper
+          image: ${imageRepository}/nova/secrets-webhook-mutation-helper:v1.0.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+          env:
+            - name: CA_CERT_PATH
+              value: /etc/ssl/certs/ca-certificates.crt
+            - name: MY_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MY_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+      containers:
+        - name: create-secret
+          image: ${imageRepository}/nova/minio-secret-provisioner:v1.0.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+          env:
+            - name: MINIO_ROOT_USER
+              value: vault:nova-secrets/data/credentials/ml/minio#root_user
+            - name: MINIO_ROOT_PASSWORD
+              value: vault:nova-secrets/data/credentials/ml/minio#root_password
+            - name: MINIO_IDENTITY_OPENID_CLIENT_ID
+              value: vault:identity/oidc/client/oidc-auth-minio#client_id
+            - name: MINIO_IDENTITY_OPENID_CLIENT_SECRET
+              value: vault:identity/oidc/client/oidc-auth-minio#client_secret
+            - name: MINIO_IDENTITY_OPENID_CONFIG_URL
+              value: "https://nova-oauth.${dnsBaseDomain}/v1/identity/oidc/provider/nova/.well-known/openid-configuration"
+          volumeMounts:
+            - mountPath: /etc/ssl/certs
+              name: trusted-ca-bundle
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+      nodeSelector:
+        node-role.kubernetes.io/worker: ""
+      tolerations: []
+      volumes:
+        - name: trusted-ca-bundle
+          configMap:
+            name: trusted-ca-bundle
+            items:
+              - key: ca-certificates.pem
+                path: ca-certificates.crt

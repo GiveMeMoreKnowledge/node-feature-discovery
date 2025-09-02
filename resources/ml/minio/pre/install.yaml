@@ -1,0 +1,68 @@
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: nova-minio
+  labels:
+    nova-platform.io/trusted-ca-bundle: enabled
+    nova-platform.io/cluster-monitoring: "true"
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+spec:
+  finalizers:
+    - kubernetes
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: nova-minio-operator-sts-cert
+  namespace: nova-minio
+spec:
+  secretName: sts-tls
+  duration: 8760h
+  renewBefore: 360h
+  subject:
+    organizations:
+      - ORIONSOFT.RU
+    organizationalUnits:
+      - nova-minio-operator
+    countries:
+      - RU
+    localities:
+      - Moscow
+  dnsNames:
+    - nova-minio-sts
+    - nova-minio-sts.nova-minio.svc
+    - nova-minio-sts.nova-minio.svc.${k8sDefaultDnsZone}
+  issuerRef:
+    name: nova-dynamic-internal-cluster-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: nova-minio-cert
+  namespace: nova-minio
+spec:
+  secretName: operator-ca-tls-nova-minio
+  duration: 8760h
+  renewBefore: 360h
+  subject:
+    organizations:
+      - ORIONSOFT.RU
+    organizationalUnits:
+      - nova-minio
+    countries:
+      - RU
+    localities:
+      - Moscow
+  dnsNames:
+    - minio
+    - minio.nova-minio.svc
+    - minio.nova-minio.svc.${k8sDefaultDnsZone}
+    - "*.nova-minio-hl.nova-minio.svc.${k8sDefaultDnsZone}"
+  issuerRef:
+    name: nova-dynamic-internal-cluster-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
