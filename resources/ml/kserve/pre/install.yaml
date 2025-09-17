@@ -1,0 +1,39 @@
+---
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: nova-kserve
+  labels:
+    nova-platform.io/trusted-ca-bundle: enabled
+    nova-platform.io/cluster-monitoring: "true"
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/enforce-version: latest
+spec:
+  finalizers:
+    - kubernetes
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: nova-kserve-serving-cert
+  namespace: nova-kserve
+spec:
+  secretName: nova-kserve-webhook-server-cert
+  duration: 8760h
+  renewBefore: 360h
+  subject:
+    organizations:
+      - ORIONSOFT.RU
+    organizationalUnits:
+      - nova-kserve
+    countries:
+      - RU
+    localities:
+      - Moscow
+  commonName: nova-kserve-webhook-server-service.nova-kserve.svc
+  dnsNames:
+    - nova-kserve-webhook-server-service.nova-kserve.svc
+  issuerRef:
+    name: nova-dynamic-internal-cluster-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
