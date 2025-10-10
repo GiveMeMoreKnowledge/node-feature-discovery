@@ -45,37 +45,13 @@ spec:
                     mig:
                       description: MIGConfig defines Multi-Instance GPU configuration
                       properties:
-                        configs:
-                          items:
-                            description:
-                              MIGProfile represents one MIG profile (mapped
-                              to ConfigMap entry)
-                            properties:
-                              devices:
-                                description:
-                                  List of GPU device indices or the keyword
-                                  "all"
-                                items:
-                                  type: string
-                                type: array
-                              mig-devices:
-                                additionalProperties:
-                                  type: integer
-                                description: Map of MIG resource name to instance count
-                                type: object
-                              name:
-                                description: Name of the profile (used as key in ConfigMap)
-                                type: string
-                            required:
-                              - devices
-                              - mig-devices
-                              - name
-                            type: object
-                          type: array
+                        configRef:
+                          type: string
                         enabled:
                           type: boolean
                         strategy:
                           enum:
+                            - none
                             - single
                             - mixed
                           type: string
@@ -85,23 +61,8 @@ spec:
                     timeSlicing:
                       description: TimeSlicingConfig defines GPU time-slicing parameters
                       properties:
-                        configs:
-                          items:
-                            description:
-                              TimeSlicingProfile holds a named profile with
-                              raw YAML template
-                            properties:
-                              config:
-                                description: Raw YAML template for this profile
-                                type: object
-                                x-kubernetes-preserve-unknown-fields: true
-                              name:
-                                description: Profile name (used as key in ConfigMap)
-                                type: string
-                            required:
-                              - name
-                            type: object
-                          type: array
+                        configRef:
+                          type: string
                         enabled:
                           type: boolean
                       required:
@@ -116,8 +77,6 @@ spec:
                   properties:
                     enabled:
                       type: boolean
-                  required:
-                    - enabled
                   type: object
               required:
                 - nvidiaGpuOperator
@@ -141,6 +100,8 @@ spec:
                         enum:
                           - AllKustomizationsReady
                           - ApplyFailed
+                          - WaitingForKustomization
+                          - KustomizationNotFound
                         type: string
                       status:
                         description: "Status of the component: true if ready"
