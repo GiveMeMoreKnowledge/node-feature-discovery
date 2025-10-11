@@ -8,11 +8,11 @@ metadata:
 spec:
   nvidiaGpuOperator:
     mig:
-      enabled: false
+      enabled: true
       strategy: single
-      configRef: "111"
+      configRef: "config from git"
     timeSlicing:
-      enabled: false
-      configRef: "222"
+      enabled: true
+      configRef: "config from git"
   nvidiaNetworkOperator:
     enabled: false
