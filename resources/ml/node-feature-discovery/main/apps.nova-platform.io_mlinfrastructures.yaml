@@ -10,9 +10,9 @@ spec:
     mig:
       enabled: true
       strategy: single
-      configRef: "mig_config_from_git"
+      configRef: "mig-config-from-git"
     timeSlicing:
       enabled: true
-      configRef: "ts_config_from_git"
+      configRef: "ts-config-from-git"
   nvidiaNetworkOperator:
     enabled: false
