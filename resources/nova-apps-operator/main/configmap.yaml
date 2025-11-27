@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: controller-manager-config
+data:
+  # Use VAULT_MODE=local for dev
+  # Use VAULT_MODE=remote for prod
+  VAULT_MODE: "local" # local | remote
+  VAULT_URL_LOCAL: "http://host.docker.internal:8200"
+  VAULT_URL_REMOTE_TEMPLATE: "https://nova-oauth.nova-external-endpoints.svc.%s:8200"
+  VAULT_ROLE: "nova-system-apps-operator"
+  VAULT_TIMEOUT: "30s"
+  VAULT_MAX_RETRIES: "3"
+  VAULT_RETRY_DELAY: "1s"
+  VAULT_INSECURE_SKIP_VERIFY: "true"
