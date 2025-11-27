@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: nova-apps-operator-controller-manager-config
+  name: operator-config
 data:
   # Use VAULT_MODE=local for dev
   # Use VAULT_MODE=remote for prod
